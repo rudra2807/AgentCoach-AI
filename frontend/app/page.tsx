@@ -8,36 +8,44 @@ type ConversationType =
   | "Listing consult"
   | "Cold outreach";
 
-const DEMOS = [
-  {
-    id: "open-house",
-    title: "Demo: Open house follow-up",
-    subtitle: "Good rapport, weak next step",
-    type: "Open house follow-up" as ConversationType,
-  },
-  {
-    id: "overtalking",
-    title: "Demo: Over-talking agent",
-    subtitle: "Misses client signals",
-    type: "Buyer consult" as ConversationType,
-  },
-  {
-    id: "no-cta",
-    title: "Demo: No next step",
-    subtitle: "Ends without momentum",
-    type: "Cold outreach" as ConversationType,
-  },
-];
-
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [demoId, setDemoId] = useState<string | null>(null);
   const [conversationType, setConversationType] =
     useState<ConversationType>("Open house follow-up");
 
   const canAnalyze = Boolean(file || demoId);
+
+  const transcribe = async () => {
+    if (!file || isLoading) return;
+
+    setIsLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error("Transcription failed");
+      }
+
+      const data = await res.json();
+      console.log("segments:", data.segments);
+      console.log("Full Transcript:", data.full_transcript);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <main className="px-4 pt-8 pb-10">
@@ -84,7 +92,7 @@ export default function Page() {
             <div>
               <p className="text-sm font-medium">Upload audio or video</p>
               <p className="mt-1 text-xs text-neutral-400">
-                mp3, wav, m4a, mp4, mov · max 5–10 minutes
+                mp3, wav, m4a, mp4, mov · max 5-10 minutes
               </p>
             </div>
 
@@ -127,51 +135,26 @@ export default function Page() {
               </button>
             </div>
           )}
-
-          {/* Demo buttons */}
-          <div className="mt-4">
-            <p className="text-xs font-medium text-neutral-300">
-              Or try a demo
-            </p>
-
-            <div className="mt-2 space-y-2">
-              {DEMOS.map((d) => {
-                const active = demoId === d.id;
-                return (
-                  <button
-                    key={d.id}
-                    onClick={() => {
-                      setDemoId(d.id);
-                      setFile(null);
-                      setConversationType(d.type);
-                    }}
-                    className={`w-full rounded-xl border px-3 py-3 text-left transition
-                      ${active
-                        ? "border-accent-500 bg-accent-500/10"
-                        : "border-neutral-800 bg-neutral-950/40"
-                      }`}
-                  >
-                    <p className="text-sm font-medium">{d.title}</p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      {d.subtitle}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Analyze CTA */}
         <button
-          disabled={!canAnalyze}
-          className={`mt-4 w-full rounded-2xl py-4 text-sm font-semibold transition
-            ${canAnalyze
+          disabled={!canAnalyze || isLoading}
+          className={`mt-4 w-full rounded-2xl py-4 text-sm font-semibold transition flex items-center justify-center gap-2
+    ${canAnalyze && !isLoading
               ? "bg-white text-neutral-950"
               : "bg-neutral-800 text-neutral-400"
             }`}
+          onClick={transcribe}
         >
-          Analyze
+          {isLoading ? (
+            <>
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent" />
+              Transcribing…
+            </>
+          ) : (
+            "Analyze"
+          )}
         </button>
 
         <p className="mt-3 text-center text-[11px] text-neutral-500">
