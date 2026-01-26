@@ -20,6 +20,24 @@ export default function Page() {
   const canAnalyze = Boolean(file || demoId);
   const [status, setStatus] = useState("loading...");
 
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const analyzeCall = async (full_transcript : string) => {
+    setLoading(true);
+    const res = await fetch("http://127.0.0.1:8000/analyze-transcript", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: full_transcript
+      }),
+    });
+
+    const data = await res.json();
+    setResult(data);
+    setLoading(false);
+  };
+
   useEffect(() => {
     fetch("http://127.0.0.1:8000/health-check")
       .then((res) => res.json())
@@ -48,6 +66,10 @@ export default function Page() {
       const data = await res.json();
       console.log("segments:", data.segments);
       console.log("Full Transcript:", data.full_transcript);
+
+      analyzeCall(data.full_transcript)
+
+      
     } catch (err) {
       console.error(err);
     } finally {
@@ -168,6 +190,9 @@ export default function Page() {
         <p className="mt-3 text-center text-[11px] text-neutral-500">
           Tip: Use a demo sample for smoother live demos.
         </p>
+        {result && (
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        )}
       </section>
     </main>
   );
