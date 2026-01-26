@@ -13,3 +13,6 @@ source venv/bin/activate
 # install pip and dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
+
+# run the server using 
+uvicorn main:app --reload
