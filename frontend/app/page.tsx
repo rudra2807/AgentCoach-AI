@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ConversationType =
   | "Open house follow-up"
@@ -38,6 +38,14 @@ export default function Page() {
     useState<ConversationType>("Open house follow-up");
 
   const canAnalyze = Boolean(file || demoId);
+  const [status, setStatus] = useState("loading...");
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/health-check")
+      .then((res) => res.json())
+      .then((data) => setStatus(data.status))
+      .catch(() => setStatus("error"));
+  }, []);
 
   return (
     <main className="px-4 pt-8 pb-10">
