@@ -301,9 +301,6 @@ function SwipeCards({ analysis }: { analysis: any }) {
           )}
         </button>
 
-        <p className="mt-3 text-center text-[11px] text-neutral-500">
-          Tip: Use a demo sample for smoother live demos.
-        </p>
         {result && <SwipeCards analysis={result} />}
         {result && (
             <button
