@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { json } from "stream/consumers";
 
 type ConversationType =
   | "Open house follow-up"
@@ -12,7 +13,8 @@ export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isAnalyzingTranscribe, setIsAnalyzingTranscribe] = useState(false);
   const [demoId, setDemoId] = useState<string | null>(null);
   const [conversationType, setConversationType] =
     useState<ConversationType>("Open house follow-up");
@@ -20,12 +22,13 @@ export default function Page() {
   const canAnalyze = Boolean(file || demoId);
 
   const transcribe = async () => {
-    if (!file || isLoading) return;
+    if (!file || isTranscribing) return;
 
-    setIsLoading(true);
+    setIsTranscribing(true);
 
     try {
       const formData = new FormData();
+      formData.append("conversation_type", conversationType);
       formData.append("file", file);
 
       const res = await fetch("/api/transcribe", {
@@ -38,14 +41,45 @@ export default function Page() {
       }
 
       const data = await res.json();
-      console.log("segments:", data.segments);
-      console.log("Full Transcript:", data.full_transcript);
+      console.log("Transcription:", JSON.stringify(data, null, 2));
+      return JSON.stringify(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsLoading(false);
+      setIsTranscribing(false);
     }
   };
+
+  const analyze = async (transcriptText: string | undefined) => {
+    setIsAnalyzingTranscribe(true);
+
+    try {
+      const formData = new FormData();
+      // formData.append("conversation_type", conversationType);
+      formData.append("transcript", transcriptText!);
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transcript: transcriptText,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Transcription failed");
+      }
+
+      const data = await res.json();
+      console.log("Analysis:", JSON.stringify(data, null, 2));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAnalyzingTranscribe(false);
+    }
+  }
 
   return (
     <main className="px-4 pt-8 pb-10">
@@ -139,18 +173,22 @@ export default function Page() {
 
         {/* Analyze CTA */}
         <button
-          disabled={!canAnalyze || isLoading}
+          disabled={!canAnalyze || isTranscribing || isAnalyzingTranscribe}
           className={`mt-4 w-full rounded-2xl py-4 text-sm font-semibold transition flex items-center justify-center gap-2
-    ${canAnalyze && !isLoading
+    ${canAnalyze && !isTranscribing && !isAnalyzingTranscribe
               ? "bg-white text-neutral-950"
               : "bg-neutral-800 text-neutral-400"
             }`}
-          onClick={transcribe}
+          onClick={() => {
+            transcribe().then((transcript) => {
+              analyze(transcript);
+            });
+          }}
         >
-          {isLoading ? (
+          {isTranscribing || isAnalyzingTranscribe ? (
             <>
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent" />
-              Transcribing…
+              {isTranscribing ? "Transcribing…" : "Analyzing Transcribe..."}
             </>
           ) : (
             "Analyze"
