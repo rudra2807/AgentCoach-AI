@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { json } from "stream/consumers";
+import { useEffect, useRef, useState } from "react";
 
 type ConversationType =
   | "Open house follow-up"
@@ -20,6 +19,32 @@ export default function Page() {
     useState<ConversationType>("Open house follow-up");
 
   const canAnalyze = Boolean(file || demoId);
+  const [status, setStatus] = useState("loading...");
+
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const analyzeCall = async (full_transcript : string) => {
+    setLoading(true);
+    const res = await fetch("http://127.0.0.1:8000/analyze-transcript", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: full_transcript
+      }),
+    });
+
+    const data = await res.json();
+    setResult(data);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/health-check")
+      .then((res) => res.json())
+      .then((data) => setStatus(data.status))
+      .catch(() => setStatus("error"));
+  }, []);
 
   const transcribe = async () => {
     if (!file || isTranscribing) return;
@@ -198,6 +223,9 @@ export default function Page() {
         <p className="mt-3 text-center text-[11px] text-neutral-500">
           Tip: Use a demo sample for smoother live demos.
         </p>
+        {result && (
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        )}
       </section>
     </main>
   );
