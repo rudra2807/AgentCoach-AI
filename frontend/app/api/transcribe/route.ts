@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     const base64 = buffer.toString("base64");
 
     const ai = new GoogleGenAI({
-      apiKey: "AIzaSyCk4wQghdJDv92cJYetJYNqCIXc196K1Jw",
+      apiKey: process.env.GEMINI_API_KEY || "",
     });
 
     const model = "gemini-2.5-flash";
@@ -28,37 +28,38 @@ export async function POST(req: Request) {
         parts: [
           {
             text: `
-You are a transcription engine for real estate conversations.
+You are transcribing a real estate agent conversation.
+Conversation type: ${formData.get("conversation_type") || "unknown"}
 
-TASK:
-1. Transcribe the audio/video accurately.
-2. Perform speaker diarization with TWO speakers:
-   - "Agent"
-   - "Client"
-3. Infer speakers based on conversational context.
-4. Provide APPROXIMATE timestamps (mm:ss). Accuracy within ~5 seconds is acceptable.
-5. Split the transcript into short conversational segments.
+Return a JSON transcript with:
+- Turn-by-turn speaker segments
+- Verbatim utterances (do NOT clean or rewrite)
+- Light best-effort flags only when obvious
 
-RETURN ONLY VALID JSON in this exact format:
+Rules:
+- Preserve filler words, repetition, and incomplete thoughts
+- Do NOT summarize or improve language
+- Do NOT merge turns
+- Use speaker values: agent, client, or unknown
+- If speaker attribution is unclear, use "unknown"
 
+Output format:
 {
-  "segments": [
+  "conversation_type": "<provided>",
+  "duration_minutes": <number>,
+  "transcript": [
     {
-      "speaker": "Agent | Client",
-      "start": "mm:ss",
-      "end": "mm:ss",
-      "text": "spoken text"
+      "turn_id": <int>,
+      "speaker": "agent|client|unknown",
+      "utterance": "<verbatim speech>",
+      "flags": {
+        "interruption": true|false,
+        "hesitation": true|false,
+        "topic_shift": true|false
+      }
     }
-  ],
-  "full_transcript": "complete transcript text"
+  ]
 }
-
-IMPORTANT RULES:
-- Do not include explanations.
-- Do not include markdown.
-- Do not include extra keys.
-- If unsure about speaker, choose the most likely one.
-- return valid JSON only.
 `,
           },
           {
