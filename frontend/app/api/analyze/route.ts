@@ -7,8 +7,16 @@ export async function POST(req: Request) {
   try {
     const { transcript } = await req.json();
 
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "OpenAI API key not configured" },
+        { status: 500 },
+      );
+    }
+
     const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey,
     });
 
     if (!transcript) {
@@ -64,7 +72,23 @@ Return JSON in this EXACT format:
       throw new Error("Empty response from OpenAI");
     }
 
-    return NextResponse.json(JSON.parse(raw));
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      const jsonMatch = raw.match(/\{[\s\S]*\}$/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch (err2) {
+          throw new Error("Failed to parse JSON from model output");
+        }
+      } else {
+        throw new Error("Model output is not valid JSON");
+      }
+    }
+
+    return NextResponse.json(parsed);
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Analysis failed" }, { status: 500 });

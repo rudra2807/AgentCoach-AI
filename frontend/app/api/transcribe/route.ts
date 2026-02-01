@@ -1,23 +1,38 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import mime from "mime";
+import { Timestamp, FieldValue } from "firebase-admin/firestore";
+import { db } from "@/app/lib/firebase-admin";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const userID = (formData.get("user_id") as string) || "unknown";
     const conversationType =
       (formData.get("conversation_type") as string) || "unknown";
+    const file = formData.get("file") as File | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-    });
+    if (file.size > 20 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: "File too large (max 20MB)" },
+        { status: 413 },
+      );
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "OpenAI API key not configured" },
+        { status: 500 },
+      );
+    }
+
+    const openai = new OpenAI({ apiKey });
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const blob = new Blob([buffer], { type: file.type });
@@ -26,10 +41,8 @@ export async function POST(req: Request) {
       file: blob,
       model: "gpt-4o-transcribe",
       response_format: "verbose_json",
-      // IMPORTANT: no interpretation here
       prompt: `
 You are transcribing a real estate conversation.
-
 Rules:
 - Verbatim transcription only
 - Preserve filler words, repetition, false starts
@@ -39,13 +52,36 @@ Rules:
       `.trim(),
     });
 
-    // You will NOT get speaker attribution from the transcribe model.
-    // Do NOT pretend you do.
-    return NextResponse.json({
+    const durationMinutes = transcription.duration
+      ? Math.round((transcription.duration / 60) * 10) / 10
+      : null;
+
+    const docRef = await db.collection("transcripts").add({
+      user_id: userID,
       conversation_type: conversationType,
-      duration_minutes: transcription.duration
-        ? Math.round((transcription.duration / 60) * 10) / 10
-        : null,
+      transcript_text: transcription.text,
+      segments: transcription.segments ?? [],
+      duration_minutes: durationMinutes,
+      created_at: Timestamp.now(),
+      source: "upload",
+    });
+
+    await db
+      .collection("users")
+      .doc(userID)
+      .set(
+        {
+          last_seen_at: Timestamp.now(),
+          transcript_count: FieldValue.increment(1),
+        },
+        { merge: true },
+      );
+
+    return NextResponse.json({
+      user_id: userID,
+      transcript_id: docRef.id,
+      conversation_type: conversationType,
+      duration_minutes: durationMinutes,
       transcript_text: transcription.text,
       segments: transcription.segments ?? [],
     });
@@ -56,86 +92,4 @@ Rules:
       { status: 500 },
     );
   }
-
-  //     const model = "gemini-2.5-flash";
-
-  //     const contents = [
-  //       {
-  //         role: "user",
-  //         parts: [
-  //           {
-  //             text: `
-  // You are transcribing a real estate agent conversation.
-  // Conversation type: ${formData.get("conversation_type") || "unknown"}
-
-  // Return a JSON transcript with:
-  // - Turn-by-turn speaker segments
-  // - Verbatim utterances (do NOT clean or rewrite)
-  // - Light best-effort flags only when obvious
-
-  // Rules:
-  // - Preserve filler words, repetition, and incomplete thoughts
-  // - Do NOT summarize or improve language
-  // - Do NOT merge turns
-  // - Use speaker values: agent, client, or unknown
-  // - If speaker attribution is unclear, use "unknown"
-
-  // Output format:
-  // {
-  //   "conversation_type": "<provided>",
-  //   "duration_minutes": <number>,
-  //   "transcript": [
-  //     {
-  //       "turn_id": <int>,
-  //       "speaker": "agent|client|unknown",
-  //       "utterance": "<verbatim speech>",
-  //       "flags": {
-  //         "interruption": true|false,
-  //         "hesitation": true|false,
-  //         "topic_shift": true|false
-  //       }
-  //     }
-  //   ]
-  // }
-  // `,
-  //           },
-  //           {
-  //             inlineData: {
-  //               data: base64,
-  //               mimeType:
-  //                 file.type ||
-  //                 mime.getType(file.name) ||
-  //                 "application/octet-stream",
-  //             },
-  //           },
-  //         ],
-  //       },
-  //     ];
-
-  //     const response = await ai.models.generateContent({
-  //       model,
-  //       contents,
-  //     });
-
-  //     const text = response.text ?? "";
-  //     console.log(text);
-
-  //     // Defensive JSON extraction (important)
-  //     const start = text.indexOf("{");
-  //     const end = text.lastIndexOf("}");
-
-  //     if (start === -1 || end === -1) {
-  //       throw new Error("Gemini did not return JSON");
-  //     }
-
-  //     const parsed = JSON.parse(text.slice(start, end + 1));
-
-  //     return NextResponse.json(parsed);
-  //   } catch (err) {
-  //     console.error(err);
-  //     return NextResponse.json(
-  //       { error: "Transcription failed" },
-  //       { status: 500 },
-  //     );
-  //   }
 }

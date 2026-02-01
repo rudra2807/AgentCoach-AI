@@ -15,32 +15,16 @@ export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  const [userID, setUserID] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [demoId, setDemoId] = useState<string | null>(null);
   const [conversationType, setConversationType] =
     useState<ConversationType>("Open House");
 
-  const canAnalyze = Boolean(file || demoId);
+  const canAnalyze = Boolean(file);
   // const [status, setStatus] = useState("loading...");
 
   const [result, setResult] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  const analyzeCall = async (full_transcript: string) => {
-    setLoading(true);
-    const res = await fetch("http://127.0.0.1:8000/analyze-transcript", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transcript: full_transcript
-      }),
-    });
-
-    const data = await res.json();
-    setResult(data);
-    setLoading(false);
-  };
 
   const buildCards = (analysis: any) => {
     if (!analysis) return [];
@@ -123,16 +107,25 @@ export default function Page() {
   }
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/health-check")
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status))
-      .catch(() => setStatus("error"));
+    // fetch("http://127.0.0.1:8000/health-check")
+    //   .then((res) => res.json())
+    //   .then((data) => setStatus(data.status))
+    //   .catch(() => setStatus("error"));
 
-    signInAnon().then((user) => {
-      console.log("Signed in anonymously as:", user.uid);
-    }).catch((err) => {
-      console.error("Anonymous sign-in failed:", err);
-    });
+    signInAnon()
+      .then(async (user) => {
+        setUserID(user.uid);
+        console.log("Signed in anonymously as:", user.uid);
+
+        await fetch("/api/heartbeat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: user.uid }),
+        });
+      })
+      .catch((err) => {
+        console.error("Anonymous sign-in failed:", err);
+      });
   }, []);
 
   const transcribe = async () => {
@@ -142,6 +135,7 @@ export default function Page() {
 
     try {
       const formData = new FormData();
+      formData.append("user_id", userID || "unknown");
       formData.append("conversation_type", conversationType);
       formData.append("file", file);
 
@@ -240,7 +234,6 @@ export default function Page() {
           <AudioRecorder
             onRecorded={(file) => {
               setFile(file);
-              setDemoId(null);
               if (fileRef.current) fileRef.current.value = "";
             }}
           />
@@ -258,7 +251,6 @@ export default function Page() {
 
             <button
               onClick={() => {
-                setDemoId(null);
                 fileRef.current?.click();
               }}
               className="rounded-xl bg-accent-600 px-3 py-2 text-sm font-medium text-white"
@@ -273,12 +265,11 @@ export default function Page() {
               className="hidden"
               onChange={(e) => {
                 setFile(e.target.files?.[0] ?? null);
-                setDemoId(null);
               }}
             />
           </div>
 
-          {(file || demoId) && (
+          {(file) && (
             <div className="mt-3 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
               <p className="text-xs text-neutral-300 truncate">
                 {file ? file.name : "Using demo sample"}
@@ -286,7 +277,6 @@ export default function Page() {
               <button
                 onClick={() => {
                   setFile(null);
-                  setDemoId(null);
                   if (fileRef.current) fileRef.current.value = "";
                 }}
                 className="text-xs text-neutral-400"
@@ -327,7 +317,6 @@ export default function Page() {
             onClick={() => {
               setResult(null);
               setFile(null);
-              setDemoId(null);
               if (fileRef.current) fileRef.current.value = "";
             }}
             className="mt-4 w-full rounded-2xl border border-neutral-800 bg-neutral-950 py-3 text-sm font-medium text-neutral-300 hover:bg-neutral-900"
