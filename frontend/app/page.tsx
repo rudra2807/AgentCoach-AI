@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { signInAnonymously } from "firebase/auth";
+import { auth } from "./lib/firebase";
+
 
 type ConversationType =
   | "Open house follow-up"
@@ -24,7 +27,7 @@ export default function Page() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  const analyzeCall = async (full_transcript : string) => {
+  const analyzeCall = async (full_transcript: string) => {
     setLoading(true);
     const res = await fetch("http://127.0.0.1:8000/analyze-transcript", {
       method: "POST",
@@ -39,11 +42,97 @@ export default function Page() {
     setLoading(false);
   };
 
+  const buildCards = (analysis: any) => {
+    if (!analysis) return [];
+
+    return [
+      {
+        title: "Conversation Summary",
+        content: analysis.conversation_summary,
+      },
+      {
+        title: "What Worked",
+        content: analysis.what_worked,
+        type: "list",
+      },
+      {
+        title: "What Hurt Conversion",
+        content: analysis.what_hurt_conversion,
+        type: "list",
+      },
+      {
+        title: "Missed Opportunity",
+        content: analysis.missed_opportunity.description,
+        badge: analysis.missed_opportunity.type,
+      },
+      {
+        title: "What To Say Instead",
+        content: analysis.what_to_say_instead.rewritten_follow_up,
+      },
+    ];
+  };
+
+  function SwipeCards({ analysis }: { analysis: any }) {
+    const cards = buildCards(analysis);
+
+    return (
+      <div className="mt-6">
+        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4">
+          {cards.map((card, idx) => (
+            <div
+              key={idx}
+              className="min-w-[85%] snap-center rounded-2xl border border-neutral-800 bg-neutral-950 p-5"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold">{card.title}</h3>
+                {card.badge && (
+                  <span className="rounded-full bg-accent-600/20 px-2 py-0.5 text-[10px] text-accent-400">
+                    {card.badge}
+                  </span>
+                )}
+              </div>
+
+              {card.type === "list" ? (
+                <ul className="space-y-2 text-sm text-neutral-300">
+                  {card.content.map((item: string, i: number) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-accent-500" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm leading-relaxed text-neutral-300">
+                  {card.content}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-2 text-center text-xs text-neutral-500">
+          Swipe to see insights →
+        </p>
+      </div>
+    );
+  }
+
+  async function signInAnon() {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  }
+
   useEffect(() => {
     fetch("http://127.0.0.1:8000/health-check")
       .then((res) => res.json())
       .then((data) => setStatus(data.status))
       .catch(() => setStatus("error"));
+
+    signInAnon().then((user) => {
+      console.log("Signed in anonymously as:", user.uid);
+    }).catch((err) => {
+      console.error("Anonymous sign-in failed:", err);
+    });
   }, []);
 
   const transcribe = async () => {
@@ -99,6 +188,10 @@ export default function Page() {
 
       const data = await res.json();
       console.log("Analysis:", JSON.stringify(data, null, 2));
+      console.log("Keys:", Object.keys(data));
+
+      setResult(data);
+
     } catch (err) {
       console.error(err);
     } finally {
@@ -220,13 +313,23 @@ export default function Page() {
           )}
         </button>
 
-        <p className="mt-3 text-center text-[11px] text-neutral-500">
-          Tip: Use a demo sample for smoother live demos.
-        </p>
+        {result && <SwipeCards analysis={result} />}
         {result && (
-          <pre>{JSON.stringify(result, null, 2)}</pre>
+          <button
+            onClick={() => {
+              setResult(null);
+              setFile(null);
+              setDemoId(null);
+              if (fileRef.current) fileRef.current.value = "";
+            }}
+            className="mt-4 w-full rounded-2xl border border-neutral-800 bg-neutral-950 py-3 text-sm font-medium text-neutral-300 hover:bg-neutral-900"
+          >
+            Analyze new
+          </button>
         )}
+
       </section>
+
     </main>
   );
 }
