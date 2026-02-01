@@ -26,31 +26,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // You are an AI real estate sales coach.
-
-// Rules:
-// - Use ONLY the information in the transcript
-// - Do NOT invent facts
-// - Do NOT repeat transcript verbatim unless quoting evidence
-// - Be concise and direct
-// - No markdown
-// - No emojis
-// - No explanations
-
-// Return JSON in this EXACT format:
-// {
-//   "conversation_summary": "2-3 sentences max",
-//   "what_worked": ["", "", ""],
-//   "what_hurt_conversion": ["", "", ""],
-//   "missed_opportunity": {
-//     "type": "value_framing | next_step | objection",
-//     "description": ""
-//   },
-//   "what_to_say_instead": {
-//     "rewritten_follow_up": ""
-//   }
-// }
-
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       temperature: 0.25,
