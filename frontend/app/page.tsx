@@ -1,50 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import AudioRecorder from "@/components/AudioRecorder";
 
 type ConversationType =
-  | "Open house follow-up"
-  | "Buyer consult"
-  | "Listing consult"
-  | "Cold outreach";
+  | "General Sales"
+  | "Open House"
+  | "Buyer Consultation";
 
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isAnalyzingTranscribe, setIsAnalyzingTranscribe] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [demoId, setDemoId] = useState<string | null>(null);
   const [conversationType, setConversationType] =
-    useState<ConversationType>("Open house follow-up");
+    useState<ConversationType>("Open House");
 
   const canAnalyze = Boolean(file || demoId);
-  const [status, setStatus] = useState("loading...");
+  // const [status, setStatus] = useState("loading...");
 
   const [result, setResult] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  const analyzeCall = async (full_transcript : string) => {
-    setLoading(true);
-    const res = await fetch("http://127.0.0.1:8000/analyze-transcript", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transcript: full_transcript
-      }),
-    });
-
-    const data = await res.json();
-    setResult(data);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetch("http://127.0.0.1:8000/health-check")
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status))
-      .catch(() => setStatus("error"));
-  }, []);
 
   const transcribe = async () => {
     if (!file || isTranscribing) return;
@@ -66,8 +43,7 @@ export default function Page() {
       }
 
       const data = await res.json();
-      console.log("Transcription:", JSON.stringify(data, null, 2));
-      return JSON.stringify(data);
+      return data.transcript_text;
     } catch (err) {
       console.error(err);
     } finally {
@@ -76,12 +52,9 @@ export default function Page() {
   };
 
   const analyze = async (transcriptText: string | undefined) => {
-    setIsAnalyzingTranscribe(true);
+    setIsAnalyzing(true);
 
     try {
-      const formData = new FormData();
-      // formData.append("conversation_type", conversationType);
-      formData.append("transcript", transcriptText!);
 
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -98,11 +71,11 @@ export default function Page() {
       }
 
       const data = await res.json();
-      console.log("Analysis:", JSON.stringify(data, null, 2));
+      setResult(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsAnalyzingTranscribe(false);
+      setIsAnalyzing(false);
     }
   }
 
@@ -143,6 +116,17 @@ export default function Page() {
             <option>Listing consult</option>
             <option>Cold outreach</option>
           </select>
+        </div>
+
+        {/* Recorder */}
+        <div className="mb-4">
+          <AudioRecorder
+            onRecorded={(file) => {
+              setFile(file);
+              setDemoId(null);
+              if (fileRef.current) fileRef.current.value = "";
+            }}
+          />
         </div>
 
         {/* Upload */}
@@ -198,9 +182,9 @@ export default function Page() {
 
         {/* Analyze CTA */}
         <button
-          disabled={!canAnalyze || isTranscribing || isAnalyzingTranscribe}
+          disabled={!canAnalyze || isTranscribing || isAnalyzing}
           className={`mt-4 w-full rounded-2xl py-4 text-sm font-semibold transition flex items-center justify-center gap-2
-    ${canAnalyze && !isTranscribing && !isAnalyzingTranscribe
+    ${canAnalyze && !isTranscribing && !isAnalyzing
               ? "bg-white text-neutral-950"
               : "bg-neutral-800 text-neutral-400"
             }`}
@@ -210,19 +194,16 @@ export default function Page() {
             });
           }}
         >
-          {isTranscribing || isAnalyzingTranscribe ? (
+          {isTranscribing || isAnalyzing ? (
             <>
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent" />
-              {isTranscribing ? "Transcribing…" : "Analyzing Transcribe..."}
+              {isTranscribing ? "Transcribing…" : "Analyzing Transcript..."}
             </>
           ) : (
             "Analyze"
           )}
         </button>
 
-        <p className="mt-3 text-center text-[11px] text-neutral-500">
-          Tip: Use a demo sample for smoother live demos.
-        </p>
         {result && (
           <pre>{JSON.stringify(result, null, 2)}</pre>
         )}
