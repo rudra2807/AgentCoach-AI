@@ -32,22 +32,21 @@ export default function Page() {
     return [
       {
         title: "Conversation Summary",
-        content: analysis.conversation_summary,
+        content: analysis.conversation_summary.text,
       },
       {
         title: "What Worked",
-        content: analysis.what_worked,
+        content: analysis.what_worked.map((i: any) => i.point),
         type: "list",
       },
       {
         title: "What Hurt Conversion",
-        content: analysis.what_hurt_conversion,
+        content: analysis.what_hurt_conversion.map((i: any) => i.point),
         type: "list",
       },
       {
         title: "Missed Opportunity",
         content: analysis.missed_opportunity.description,
-        badge: analysis.missed_opportunity.type,
       },
       {
         title: "What To Say Instead",
@@ -93,10 +92,6 @@ export default function Page() {
             </div>
           ))}
         </div>
-
-        <p className="mt-2 text-center text-xs text-neutral-500">
-          Swipe to see insights →
-        </p>
       </div>
     );
   }
@@ -342,20 +337,44 @@ export default function Page() {
             "Analyze"
           )}
         </button>
+          {result && typeof result.overall_score === "number" && (
+            <>
+              <div className="mt-6 flex justify-center">
+                <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 px-6 py-3">
+                  <span className="text-xs uppercase tracking-wide text-neutral-500">
+                    Overall Score
+                  </span>
+                  <span className="text-lg font-semibold text-white">
+                    {result.overall_score}/10
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
 
-        {result && <SwipeCards analysis={result} />}
-        {result && (
-          <button
-            onClick={() => {
-              setResult(null);
-              setFile(null);
-              if (fileRef.current) fileRef.current.value = "";
-            }}
-            className="mt-4 w-full rounded-2xl border border-neutral-800 bg-neutral-950 py-3 text-sm font-medium text-neutral-300 hover:bg-neutral-900"
-          >
-            Analyze new
-          </button>
-        )}
+          {/* Swipe cards */}
+          {result && <SwipeCards analysis={result} />}
+
+          {/* Swipe hint BELOW cards */}
+          {result && (
+            <div>
+              <p className="mt-2 text-center text-xs text-neutral-500">
+              Swipe to see insights →
+            </p>
+                      <button
+                onClick={() => {
+                  setResult(null);
+                  setFile(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+                className="mt-4 w-full rounded-2xl border border-neutral-800 bg-neutral-950 py-3 text-sm font-medium text-neutral-300 hover:bg-neutral-900"
+              >
+                Analyze new
+              </button>
+              </div>
+          )}
+
+
 
       </section>
 

@@ -26,6 +26,31 @@ export async function POST(req: Request) {
       );
     }
 
+    // You are an AI real estate sales coach.
+
+// Rules:
+// - Use ONLY the information in the transcript
+// - Do NOT invent facts
+// - Do NOT repeat transcript verbatim unless quoting evidence
+// - Be concise and direct
+// - No markdown
+// - No emojis
+// - No explanations
+
+// Return JSON in this EXACT format:
+// {
+//   "conversation_summary": "2-3 sentences max",
+//   "what_worked": ["", "", ""],
+//   "what_hurt_conversion": ["", "", ""],
+//   "missed_opportunity": {
+//     "type": "value_framing | next_step | objection",
+//     "description": ""
+//   },
+//   "what_to_say_instead": {
+//     "rewritten_follow_up": ""
+//   }
+// }
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       temperature: 0.25,
@@ -36,26 +61,59 @@ export async function POST(req: Request) {
 You are an AI real estate sales coach.
 
 Rules:
-- Use ONLY the information in the transcript
-- Do NOT invent facts
-- Do NOT repeat transcript verbatim unless quoting evidence
-- Be concise and direct
-- No markdown
-- No emojis
-- No explanations
+
+Use ONLY the information in the transcript
+
+Do NOT invent facts
+
+Do NOT repeat transcript verbatim unless quoting evidence
+
+Be concise and direct
+
+No markdown
+
+No emojis
+
+No explanations
+
+All scores must be numeric integers
+
+Scores must be inferred ONLY from the transcript
+
+Scoring rules:
+
+All scores are on a 0–10 scale
+
+0 = very poor / missing
+
+10 = excellent / highly effective
 
 Return JSON in this EXACT format:
 {
-  "conversation_summary": "2-3 sentences max",
-  "what_worked": ["", "", ""],
-  "what_hurt_conversion": ["", "", ""],
-  "missed_opportunity": {
-    "type": "value_framing | next_step | objection",
-    "description": ""
-  },
-  "what_to_say_instead": {
-    "rewritten_follow_up": ""
-  }
+"overall_score": 0,
+"conversation_summary": {
+"text": "2-3 sentences max",
+"score": 0
+},
+"what_worked": [
+{ "point": "", "score": 0 },
+{ "point": "", "score": 0 },
+{ "point": "", "score": 0 }
+],
+"what_hurt_conversion": [
+{ "point": "", "severity": 0 },
+{ "point": "", "severity": 0 },
+{ "point": "", "severity": 0 }
+],
+"missed_opportunity": {
+"type": "value_framing | next_step | objection",
+"description": "",
+"impact_score": 0
+},
+"what_to_say_instead": {
+"rewritten_follow_up": "",
+"confidence_score": 0
+}
 }
           `.trim(),
         },
