@@ -17,6 +17,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    console.log("formData keys:", [...formData.keys()]);
+
     if (file.size > 20 * 1024 * 1024) {
       return NextResponse.json(
         { error: "File too large (max 20MB)" },
@@ -35,12 +37,14 @@ export async function POST(req: Request) {
     const openai = new OpenAI({ apiKey });
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const blob = new Blob([buffer], { type: file.type });
+    const openaiFile = new File([buffer], file.name || "audio", {
+      type: file.type,
+    });
 
     const transcription = await openai.audio.transcriptions.create({
-      file: blob,
+      file: openaiFile,
       model: "gpt-4o-transcribe",
-      response_format: "verbose_json",
+      response_format: "json",
       prompt: `
 You are transcribing a real estate conversation.
 Rules:
@@ -52,15 +56,52 @@ Rules:
       `.trim(),
     });
 
-    const durationMinutes = transcription.duration
-      ? Math.round((transcription.duration / 60) * 10) / 10
+    // Normalize transcription response shapes across diarized variants
+    const raw: any = transcription as any;
+    const transcriptText: string = raw.text ?? raw.transcript ?? "";
+
+    // Normalize segments (array, JSON string, or nested)
+    let segments: any[] = [];
+    if (Array.isArray(raw.segments)) {
+      segments = raw.segments;
+    } else if (typeof raw.segments === "string") {
+      try {
+        const parsed = JSON.parse(raw.segments);
+        if (Array.isArray(parsed)) segments = parsed;
+      } catch (e) {
+        // ignore parse error
+      }
+    } else if (raw.diarization && Array.isArray(raw.diarization.segments)) {
+      segments = raw.diarization.segments;
+    } else if (raw.data && Array.isArray(raw.data.segments)) {
+      segments = raw.data.segments;
+    }
+
+    // Compute duration: prefer explicit duration, else infer from segments
+    let durationSeconds: number | null = null;
+    if (typeof raw.duration === "number") {
+      durationSeconds = raw.duration;
+    } else if (Array.isArray(segments) && segments.length > 0) {
+      const maxEnd = segments.reduce((acc, s) => {
+        const candidate = s.end ?? s.end_time ?? s.end_seconds ?? s.to ?? null;
+        const num =
+          typeof candidate === "number"
+            ? candidate
+            : parseFloat(candidate) || 0;
+        return Math.max(acc, num);
+      }, 0);
+      if (maxEnd > 0) durationSeconds = maxEnd;
+    }
+
+    const durationMinutes = durationSeconds
+      ? Math.round((durationSeconds / 60) * 10) / 10
       : null;
 
     const docRef = await db.collection("transcripts").add({
       user_id: userID,
       conversation_type: conversationType,
-      transcript_text: transcription.text,
-      segments: transcription.segments ?? [],
+      transcript_text: transcriptText,
+      segments: segments ?? [],
       duration_minutes: durationMinutes,
       created_at: Timestamp.now(),
       source: "upload",
@@ -82,8 +123,8 @@ Rules:
       transcript_id: docRef.id,
       conversation_type: conversationType,
       duration_minutes: durationMinutes,
-      transcript_text: transcription.text,
-      segments: transcription.segments ?? [],
+      transcript_text: transcriptText,
+      segments: segments ?? [],
     });
   } catch (err) {
     console.error(err);

@@ -129,7 +129,12 @@ export default function Page() {
   }, []);
 
   const transcribe = async () => {
-    if (!file || isTranscribing) return;
+    if (!file) {
+      throw new Error("No file selected");
+    }
+    if (isTranscribing) {
+      throw new Error("Already transcribing");
+    }
 
     setIsTranscribing(true);
 
@@ -149,6 +154,7 @@ export default function Page() {
       }
 
       const data = await res.json();
+      console.log(data);
       return data.transcript_text;
     } catch (err) {
       console.error(err);
@@ -158,6 +164,12 @@ export default function Page() {
   };
 
   const analyze = async (transcriptText: string | undefined) => {
+
+    if (!transcriptText) {
+      console.error("No transcript text provided for analysis");
+      return;
+    }
+
     setIsAnalyzing(true);
 
     try {
@@ -222,10 +234,9 @@ export default function Page() {
             }
             className="mt-2 w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm text-neutral-100 focus:outline-none"
           >
-            <option>Open house follow-up</option>
-            <option>Buyer consult</option>
-            <option>Listing consult</option>
-            <option>Cold outreach</option>
+            <option>General Sales</option>
+            <option>Open House</option>
+            <option>Buyer Consultation</option>
           </select>
         </div>
 
