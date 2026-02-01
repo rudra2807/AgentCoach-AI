@@ -139,15 +139,36 @@ export default function Page() {
     setIsTranscribing(true);
 
     try {
+      // If the selected file is a video, first send it to /api/extract-audio
+      const isVideo = (f: File) =>
+        f.type.startsWith("video/") || /\.(mp4|mov|mkv|webm|avi|flv)$/i.test(f.name);
+
+      let uploadFile: File = file;
+
+      if (isVideo(file)) {
+        const fd = new FormData();
+        fd.append("file", file);
+
+        const extractRes = await fetch("/api/extract-audio", {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!extractRes.ok) {
+          const txt = await extractRes.text().catch(() => "");
+          throw new Error("Audio extraction failed: " + txt);
+        }
+
+        const audioBlob = await extractRes.blob();
+        uploadFile = new File([audioBlob], "extracted.wav", { type: "audio/wav" });
+      }
+
       const formData = new FormData();
       formData.append("user_id", userID || "unknown");
       formData.append("conversation_type", conversationType);
-      formData.append("file", file);
+      formData.append("file", uploadFile);
 
-      const res = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
 
       if (!res.ok) {
         throw new Error("Transcription failed");
