@@ -4,43 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { signInAnonymously } from "firebase/auth";
 import { auth } from "./lib/firebase";
 
+import AudioRecorder from "@/components/AudioRecorder";
 
 type ConversationType =
-  | "Open house follow-up"
-  | "Buyer consult"
-  | "Listing consult"
-  | "Cold outreach";
+  | "General Sales"
+  | "Open House"
+  | "Buyer Consultation";
 
 export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  const [userID, setUserID] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isAnalyzingTranscribe, setIsAnalyzingTranscribe] = useState(false);
-  const [demoId, setDemoId] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [conversationType, setConversationType] =
-    useState<ConversationType>("Open house follow-up");
+    useState<ConversationType>("Open House");
 
-  const canAnalyze = Boolean(file || demoId);
-  const [status, setStatus] = useState("loading...");
+  const canAnalyze = Boolean(file);
+  // const [status, setStatus] = useState("loading...");
 
   const [result, setResult] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  const analyzeCall = async (full_transcript: string) => {
-    setLoading(true);
-    const res = await fetch("http://127.0.0.1:8000/analyze-transcript", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transcript: full_transcript
-      }),
-    });
-
-    const data = await res.json();
-    setResult(data);
-    setLoading(false);
-  };
 
   const buildCards = (analysis: any) => {
     if (!analysis) return [];
@@ -123,40 +107,76 @@ export default function Page() {
   }
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/health-check")
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status))
-      .catch(() => setStatus("error"));
+    // fetch("http://127.0.0.1:8000/health-check")
+    //   .then((res) => res.json())
+    //   .then((data) => setStatus(data.status))
+    //   .catch(() => setStatus("error"));
 
-    signInAnon().then((user) => {
-      console.log("Signed in anonymously as:", user.uid);
-    }).catch((err) => {
-      console.error("Anonymous sign-in failed:", err);
-    });
+    signInAnon()
+      .then(async (user) => {
+        setUserID(user.uid);
+        console.log("Signed in anonymously as:", user.uid);
+
+        await fetch("/api/heartbeat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: user.uid }),
+        });
+      })
+      .catch((err) => {
+        console.error("Anonymous sign-in failed:", err);
+      });
   }, []);
 
   const transcribe = async () => {
-    if (!file || isTranscribing) return;
+    if (!file) {
+      throw new Error("No file selected");
+    }
+    if (isTranscribing) {
+      throw new Error("Already transcribing");
+    }
 
     setIsTranscribing(true);
 
     try {
-      const formData = new FormData();
-      formData.append("conversation_type", conversationType);
-      formData.append("file", file);
+      // If the selected file is a video, first send it to /api/extract-audio
+      const isVideo = (f: File) =>
+        f.type.startsWith("video/") || /\.(mp4|mov|mkv|webm|avi|flv)$/i.test(f.name);
 
-      const res = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      });
+      let uploadFile: File = file;
+
+      if (isVideo(file)) {
+        const fd = new FormData();
+        fd.append("file", file);
+
+        const extractRes = await fetch("/api/extract-audio", {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!extractRes.ok) {
+          const txt = await extractRes.text().catch(() => "");
+          throw new Error("Audio extraction failed: " + txt);
+        }
+
+        const audioBlob = await extractRes.blob();
+        uploadFile = new File([audioBlob], "extracted.wav", { type: "audio/wav" });
+      }
+
+      const formData = new FormData();
+      formData.append("user_id", userID || "unknown");
+      formData.append("conversation_type", conversationType);
+      formData.append("file", uploadFile);
+
+      const res = await fetch("/api/transcribe", { method: "POST", body: formData });
 
       if (!res.ok) {
         throw new Error("Transcription failed");
       }
 
       const data = await res.json();
-      console.log("Transcription:", JSON.stringify(data, null, 2));
-      return JSON.stringify(data);
+      console.log(data);
+      return data.transcript_text;
     } catch (err) {
       console.error(err);
     } finally {
@@ -165,12 +185,15 @@ export default function Page() {
   };
 
   const analyze = async (transcriptText: string | undefined) => {
-    setIsAnalyzingTranscribe(true);
+
+    if (!transcriptText) {
+      console.error("No transcript text provided for analysis");
+      return;
+    }
+
+    setIsAnalyzing(true);
 
     try {
-      const formData = new FormData();
-      // formData.append("conversation_type", conversationType);
-      formData.append("transcript", transcriptText!);
 
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -192,10 +215,11 @@ export default function Page() {
 
       setResult(data);
 
+      setResult(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsAnalyzingTranscribe(false);
+      setIsAnalyzing(false);
     }
   }
 
@@ -231,11 +255,20 @@ export default function Page() {
             }
             className="mt-2 w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm text-neutral-100 focus:outline-none"
           >
-            <option>Open house follow-up</option>
-            <option>Buyer consult</option>
-            <option>Listing consult</option>
-            <option>Cold outreach</option>
+            <option>General Sales</option>
+            <option>Open House</option>
+            <option>Buyer Consultation</option>
           </select>
+        </div>
+
+        {/* Recorder */}
+        <div className="mb-4">
+          <AudioRecorder
+            onRecorded={(file) => {
+              setFile(file);
+              if (fileRef.current) fileRef.current.value = "";
+            }}
+          />
         </div>
 
         {/* Upload */}
@@ -250,7 +283,6 @@ export default function Page() {
 
             <button
               onClick={() => {
-                setDemoId(null);
                 fileRef.current?.click();
               }}
               className="rounded-xl bg-accent-600 px-3 py-2 text-sm font-medium text-white"
@@ -265,12 +297,11 @@ export default function Page() {
               className="hidden"
               onChange={(e) => {
                 setFile(e.target.files?.[0] ?? null);
-                setDemoId(null);
               }}
             />
           </div>
 
-          {(file || demoId) && (
+          {(file) && (
             <div className="mt-3 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
               <p className="text-xs text-neutral-300 truncate">
                 {file ? file.name : "Using demo sample"}
@@ -278,7 +309,6 @@ export default function Page() {
               <button
                 onClick={() => {
                   setFile(null);
-                  setDemoId(null);
                   if (fileRef.current) fileRef.current.value = "";
                 }}
                 className="text-xs text-neutral-400"
@@ -291,9 +321,9 @@ export default function Page() {
 
         {/* Analyze CTA */}
         <button
-          disabled={!canAnalyze || isTranscribing || isAnalyzingTranscribe}
+          disabled={!canAnalyze || isTranscribing || isAnalyzing}
           className={`mt-4 w-full rounded-2xl py-4 text-sm font-semibold transition flex items-center justify-center gap-2
-    ${canAnalyze && !isTranscribing && !isAnalyzingTranscribe
+    ${canAnalyze && !isTranscribing && !isAnalyzing
               ? "bg-white text-neutral-950"
               : "bg-neutral-800 text-neutral-400"
             }`}
@@ -303,10 +333,10 @@ export default function Page() {
             });
           }}
         >
-          {isTranscribing || isAnalyzingTranscribe ? (
+          {isTranscribing || isAnalyzing ? (
             <>
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent" />
-              {isTranscribing ? "Transcribing…" : "Analyzing Transcribe..."}
+              {isTranscribing ? "Transcribing…" : "Analyzing Transcript..."}
             </>
           ) : (
             "Analyze"
@@ -319,7 +349,6 @@ export default function Page() {
             onClick={() => {
               setResult(null);
               setFile(null);
-              setDemoId(null);
               if (fileRef.current) fileRef.current.value = "";
             }}
             className="mt-4 w-full rounded-2xl border border-neutral-800 bg-neutral-950 py-3 text-sm font-medium text-neutral-300 hover:bg-neutral-900"
