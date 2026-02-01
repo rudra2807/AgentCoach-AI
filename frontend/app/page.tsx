@@ -68,11 +68,6 @@ export default function Page() {
             >
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold">{card.title}</h3>
-                {card.badge && (
-                  <span className="rounded-full bg-accent-600/20 px-2 py-0.5 text-[10px] text-accent-400">
-                    {card.badge}
-                  </span>
-                )}
               </div>
 
               {card.type === "list" ? (
