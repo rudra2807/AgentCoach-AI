@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { signInAnonymously } from "firebase/auth";
 import { auth } from "./lib/firebase";
 
@@ -216,6 +217,20 @@ export default function Page() {
   return (
     <main className="px-4 pt-8 pb-10">
       {/* Header */}
+      {/* <header className="mb-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-xs text-neutral-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent-500" />
+          AgentCoach AI
+        </div>
+
+        <h1 className="mt-4 text-2xl font-semibold leading-tight">
+          AI Coaching for Real Estate Conversations
+        </h1>
+
+        <p className="mt-2 text-sm text-neutral-400">
+          Upload a call. Get clear coaching. Improve your follow-up in minutes.
+        </p>
+      </header> */}
       <header className="mb-6">
         <div className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-xs text-neutral-300">
           <span className="h-1.5 w-1.5 rounded-full bg-accent-500" />
@@ -229,6 +244,19 @@ export default function Page() {
         <p className="mt-2 text-sm text-neutral-400">
           Upload a call. Get clear coaching. Improve your follow-up in minutes.
         </p>
+
+        <div className="mt-4 flex gap-3">
+          <Link
+            href="/roleplay"
+            className="inline-flex items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm font-medium text-neutral-200 hover:bg-neutral-800"
+          >
+            Try Roleplay Chat
+          </Link>
+
+          <span className="inline-flex items-center text-xs text-neutral-500">
+            Customer roleplay coaching
+          </span>
+        </div>
       </header>
 
       {/* Main card */}
