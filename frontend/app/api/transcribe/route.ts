@@ -46,13 +46,13 @@ export async function POST(req: Request) {
       model: "gpt-4o-transcribe",
       response_format: "json",
       prompt: `
-You are transcribing a real estate conversation.
-Rules:
-- Verbatim transcription only
-- Preserve filler words, repetition, false starts
-- Do NOT summarize
-- Do NOT infer intent
-- Do NOT add coaching
+        You are transcribing a real estate conversation.
+        Rules:
+        - Verbatim transcription only
+        - Preserve filler words, repetition, false starts
+        - Do NOT summarize
+        - Do NOT infer intent
+        - Do NOT add coaching
       `.trim(),
     });
 
