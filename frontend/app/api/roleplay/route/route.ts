@@ -9,19 +9,28 @@ export async function POST(req: Request) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
+      return NextResponse.json(
+        { error: "OpenAI API key not configured" },
+        { status: 500 },
+      );
     }
 
-    const { stageId, messages, remainingUtteranceHints } = (await req.json()) as {
-      stageId: number;
-      messages: ChatMsg[];
-      remainingUtteranceHints?: Array<{ id: string; stage_id: number; tags?: string[]; text: string }>;
-    };
+    const { stageId, messages, remainingUtteranceHints } =
+      (await req.json()) as {
+        stageId: number;
+        messages: ChatMsg[];
+        remainingUtteranceHints?: Array<{
+          id: string;
+          stage_id: number;
+          tags?: string[];
+          text: string;
+        }>;
+      };
 
     if (!stageId || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
         { error: "Missing stageId or messages[]" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -29,16 +38,15 @@ export async function POST(req: Request) {
     const recent = messages.slice(-10);
 
     // Optional: give the router a short view of available moves (not the whole script)
-    const hintText =
-      remainingUtteranceHints?.length
-        ? remainingUtteranceHints
-            .slice(0, 25)
-            .map(
-              (u) =>
-                `- id=${u.id} stage=${u.stage_id} tags=${(u.tags ?? []).join(",")} text="${u.text}"`
-            )
-            .join("\n")
-        : "(not provided)";
+    const hintText = remainingUtteranceHints?.length
+      ? remainingUtteranceHints
+          .slice(0, 25)
+          .map(
+            (u) =>
+              `- id=${u.id} stage=${u.stage_id} tags=${(u.tags ?? []).join(",")} text="${u.text}"`,
+          )
+          .join("\n")
+      : "(not provided)";
 
     const openai = new OpenAI({ apiKey });
 
@@ -79,7 +87,7 @@ export async function POST(req: Request) {
                     - Stage 3 (Qualification & Depth): budget, beds/baths, sqft, commute, schools, HOA, pre-approval/lender, timeline specifics.
                     - Stage 4 (Objection Handling): buyer expresses hesitation/pressure/overpay/rates/crash/commitment fears.
                     - Stage 5 (Value Frame testing): buyer is self-educating (Zillow/Redfin/online browsing), questioning agent value, “what do you do?”, “why sign?”, “can we go to listing agent?”
-                    - Stage 6 (Momentum/Next steps): buyer asks what’s next, wants to think, delays, scheduling, “we’ll reach out”.
+                    - Stage 6 (Momentum/Next steps): buyer asks what's next, wants to think, delays, scheduling, “we’ll reach out”.
 
                     Escalation triggers:
                     - If the agent ignores "not in a rush" and pushes urgency/showings/listings => recommended_stage_id=4 and should_escalate_to_objections=true.
@@ -112,7 +120,7 @@ export async function POST(req: Request) {
                     - If recommended_stage_id=4, tags should be like: objection_pressure, objection_overpay, objection_rates, objection_wait, objection_commitment
                     - If recommended_stage_id=5, tags should be like: value_frame, zillow_vs_agent, buyer_rep_agreement, commission, competitive_advantage
                     - If recommended_stage_id=6, tags should be like: next_step, follow_up, scheduling, hesitation, think_it_over
-                    `.trim()
+                    `.trim(),
         },
         {
           role: "user",

@@ -15,14 +15,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
     }
     if (!agentMessage || typeof agentMessage !== "string") {
-      return NextResponse.json({ error: "Missing agentMessage" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing agentMessage" },
+        { status: 400 },
+      );
     }
 
     const session = getSession(sessionId);
     if (!session) {
       return NextResponse.json(
         { error: "Session not found (server restarted?)" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -35,7 +38,11 @@ export async function POST(req: Request) {
     session.signals = sig;
 
     // 1) store agent message
-    session.messages.push({ role: "Agent", text: agentMessage, ts: Date.now() });
+    session.messages.push({
+      role: "Agent",
+      text: agentMessage,
+      ts: Date.now(),
+    });
 
     // We still load the script only to build hintText for routing (optional)
     const script = loadRoleplayScript();
@@ -49,17 +56,24 @@ export async function POST(req: Request) {
         .filter((m) => m.role === "Agent" || m.role === "Customer")
         .map((m) => ({ role: m.role, text: m.text }));
 
-      const remainingUtteranceHints = buildRemainingUtteranceHints(session, script, 25);
+      const remainingUtteranceHints = buildRemainingUtteranceHints(
+        session,
+        script,
+        25,
+      );
 
-      const routerRes = await fetch(new URL("/api/roleplay/route", req.url), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stageId: session.stageId,
-          messages: recentMessages,
-          remainingUtteranceHints,
-        }),
-      });
+      const routerRes = await fetch(
+        "http://localhost:3000/api/roleplay/route",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stageId: session.stageId,
+            messages: recentMessages,
+            remainingUtteranceHints,
+          }),
+        },
+      );
 
       const routerJson = await routerRes.json();
       routerDecision = routerJson;
@@ -83,7 +97,9 @@ export async function POST(req: Request) {
     }
 
     // 3) Choose stage + tags
-    const recStage = Number(routerDecision?.recommended_stage_id ?? session.stageId);
+    const recStage = Number(
+      routerDecision?.recommended_stage_id ?? session.stageId,
+    );
     const recTags = Array.isArray(routerDecision?.recommended_tags)
       ? routerDecision.recommended_tags
       : [];
@@ -96,21 +112,24 @@ export async function POST(req: Request) {
     let generated: any = null;
 
     try {
-      const genRes = await fetch(new URL("/api/roleplay/generate", req.url), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          stageId: session.stageId,
-          tags: recTags,
-          signals: session.signals ?? {},
-          lastIntent: (session.signals as any)?.last_customer_intent ?? "",
-          reaskCounts: (session.signals as any)?.reask_count_by_intent ?? {},
-          messages: session.messages
-            .slice(-12)
-            .filter((m) => m.role === "Agent" || m.role === "Customer")
-            .map((m) => ({ role: m.role, text: m.text })),
-        }),
-      });
+      const genRes = await fetch(
+        "http://localhost:3000/api/roleplay/generate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stageId: session.stageId,
+            tags: recTags,
+            signals: session.signals ?? {},
+            lastIntent: (session.signals as any)?.last_customer_intent ?? "",
+            reaskCounts: (session.signals as any)?.reask_count_by_intent ?? {},
+            messages: session.messages
+              .slice(-12)
+              .filter((m) => m.role === "Agent" || m.role === "Customer")
+              .map((m) => ({ role: m.role, text: m.text })),
+          }),
+        },
+      );
 
       const genJson = await genRes.json();
       if (!genRes.ok) {
@@ -120,22 +139,30 @@ export async function POST(req: Request) {
     } catch (e: any) {
       console.log("[ROLEPLAY GENERATE ERROR]", e?.message ?? e);
       return NextResponse.json(
-        { error: e?.message ?? "generate_failed", debug: { router: routerDecision } },
-        { status: 500 }
+        {
+          error: e?.message ?? "generate_failed",
+          debug: { router: routerDecision },
+        },
+        { status: 500 },
       );
     }
 
     // 5) Update anti-loop memory from generated intent
-    const newIntent = typeof generated?.intent === "string" ? generated.intent.trim() : "";
+    const newIntent =
+      typeof generated?.intent === "string" ? generated.intent.trim() : "";
     const s = session.signals as any;
-    const prevIntent = typeof s.last_customer_intent === "string" ? s.last_customer_intent : "";
+    const prevIntent =
+      typeof s.last_customer_intent === "string" ? s.last_customer_intent : "";
 
     if (newIntent) {
-      s.asked_intents = Array.from(new Set([...(s.asked_intents ?? []), newIntent]));
+      s.asked_intents = Array.from(
+        new Set([...(s.asked_intents ?? []), newIntent]),
+      );
       s.reask_count_by_intent = s.reask_count_by_intent ?? {};
 
       if (prevIntent && prevIntent === newIntent) {
-        s.reask_count_by_intent[newIntent] = (s.reask_count_by_intent[newIntent] ?? 0) + 1;
+        s.reask_count_by_intent[newIntent] =
+          (s.reask_count_by_intent[newIntent] ?? 0) + 1;
       } else {
         s.reask_count_by_intent[newIntent] = 0;
       }
@@ -154,7 +181,9 @@ export async function POST(req: Request) {
         tags: Array.isArray(generated.tags) ? generated.tags : recTags,
         intent: newIntent,
         requires_answer:
-          typeof generated.requires_answer === "boolean" ? generated.requires_answer : true,
+          typeof generated.requires_answer === "boolean"
+            ? generated.requires_answer
+            : true,
         facts: { facts_used: generated.facts_used ?? [] },
         consistency_check: generated.consistency_check ?? "ok",
       },
@@ -175,7 +204,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message ?? "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
