@@ -15,6 +15,7 @@ type GenerateReq = {
   // NEW (optional but recommended)
   lastIntent?: string;
   reaskCounts?: Record<string, number>;
+  firstMessage?: boolean;
 };
 
 export async function POST(req: Request) {
@@ -23,22 +24,31 @@ export async function POST(req: Request) {
     if (!apiKey) {
       return NextResponse.json(
         { error: "OpenAI API key not configured" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    const { stageId, tags, messages, signals, lastIntent, reaskCounts } =
-      (await req.json()) as GenerateReq;
+    const {
+      stageId,
+      tags,
+      messages,
+      signals,
+      lastIntent,
+      reaskCounts,
+      firstMessage,
+    } = (await req.json()) as GenerateReq;
 
-    if (
-      typeof stageId !== "number" ||
-      !Array.isArray(messages) ||
-      messages.length === 0
-    ) {
-      return NextResponse.json(
-        { error: "Missing stageId or messages[]" },
-        { status: 400 }
-      );
+    if (!firstMessage) {
+      if (
+        typeof stageId !== "number" ||
+        !Array.isArray(messages) ||
+        messages.length === 0
+      ) {
+        return NextResponse.json(
+          { error: "Missing stageId or messages[]" },
+          { status: 400 },
+        );
+      }
     }
 
     const openai = new OpenAI({ apiKey });
@@ -75,7 +85,13 @@ Hard rules:
 - Do NOT introduce new facts (budget, timeline, baby, relocation, exact location) unless already in signals or said in chat.
 - NEVER invent or suggest a specific street address or listing (no "2900 1st ave").
 - If information is missing, ask a realistic customer follow-up question that matches the requested tags.
-- Keep it 1–2 sentences. No emojis.
+- Keep it 1-2 sentences. No emojis.
+
+If this is the FIRST customer message in the session:
+- Write a complete, cohesive opening statement.
+- Combine relevant early-stage signals naturally.
+- Do NOT output fragmented thoughts.
+- Avoid repeating similar ideas across separate turns.
 
 Stage intent:
 2 = Motivation discovery (early, curious, renting, browsing online, space, relocation, neighborhood uncertainty)
@@ -89,6 +105,8 @@ Anti-loop rules (very important):
 - If the last customer message was a question and the agent did not answer it, you may rephrase ONCE.
 - If this same intent has already been re-asked once (reaskCounts[intent] >= 1), do NOT re-ask again.
   Instead, switch to a different angle within the same stage.
+- You can come up with numbers, details, and specifics to make the conversation realistic, but do NOT contradict any known signals or previous chat messages.
+- If the agent is suggesting end of conversation then take the hint and complete the conversation with a realistic closing statement.
 - Avoid generic "what should we consider?" / "any tips?" questions more than once per session.
 
 Return ONLY valid JSON in EXACT format:
@@ -164,13 +182,18 @@ ${recent.map((m) => `${m.role}: ${m.text}`).join("\n")}
     }
 
     if (typeof parsed.stage_id !== "number") parsed.stage_id = stageId;
-    if (!Array.isArray(parsed.tags)) parsed.tags = Array.isArray(tags) ? tags : [];
+    if (!Array.isArray(parsed.tags))
+      parsed.tags = Array.isArray(tags) ? tags : [];
 
     if (typeof parsed.intent !== "string") parsed.intent = "";
-    if (typeof parsed.requires_answer !== "boolean") parsed.requires_answer = true;
+    if (typeof parsed.requires_answer !== "boolean")
+      parsed.requires_answer = true;
 
     if (!Array.isArray(parsed.facts_used)) parsed.facts_used = [];
-    if (parsed.consistency_check !== "ok" && parsed.consistency_check !== "risk") {
+    if (
+      parsed.consistency_check !== "ok" &&
+      parsed.consistency_check !== "risk"
+    ) {
       parsed.consistency_check = "ok";
     }
 
@@ -187,7 +210,7 @@ ${recent.map((m) => `${m.role}: ${m.text}`).join("\n")}
     console.error(err);
     return NextResponse.json(
       { error: err?.message ?? "Generate failed" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
