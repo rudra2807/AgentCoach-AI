@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+import { SCENARIOS, DEFAULT_SCENARIO_ID, getScenarioById } from "@/app/lib/roleplay/scenarios";
+import { buildOpeningInstructions } from "@/app/lib/roleplay/prompt";
+
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -18,6 +22,31 @@ function formatTime(s: number) {
   const m = Math.floor(s / 60);
   return `${pad(m)}:${pad(s % 60)}`;
 }
+
+function isJunkTranscript(t: string) {
+  const s = (t || "").trim();
+  if (!s) return true;
+
+  // 1) super short (most hallucinations are 1–2 words)
+  if (s.length < 4) return true;
+
+  // 2) non-English / non-ascii heavy (Korean/Arabic/etc.)
+  const nonAscii = (s.match(/[^\x00-\x7F]/g) ?? []).length;
+  if (nonAscii / s.length > 0.15) return true;
+
+  // 3) repeated fillers / closings that often come from noise
+  const lower = s.toLowerCase();
+  const bannedSingles = new Set([
+    "bye", "bye.", "ok", "okay", "thanks", "thank you", "peace", "yes", "no"
+  ]);
+  if (bannedSingles.has(lower)) return true;
+
+  // 4) “news anchor” style patterns (optional but works well)
+  if (/(뉴스|입니다)/.test(s)) return true;
+
+  return false;
+}
+
 
 /* ─────────────────────────────────────────────
    WAVEFORM – animated SVG bars
@@ -406,6 +435,8 @@ function CoachingPanel({ content }: { content: string }) {
 export default function RoleplayPage() {
   const router = useRouter();
 
+  const [scenarioId, setScenarioId] = useState<string>(DEFAULT_SCENARIO_ID);
+
   const [phase, setPhase] = useState<Phase>("idle");
   const [speaking, setSpeaking] = useState(false); // crude toggle for viz
   const [elapsed, setElapsed] = useState(0);
@@ -420,6 +451,7 @@ export default function RoleplayPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analyzerRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const lastYouRef = useRef<string>("");
 
   const started = phase !== "idle" && phase !== "done";
 
@@ -437,25 +469,44 @@ export default function RoleplayPage() {
   }, [phase]);
 
   /* speaking detection via analyser */
-  function setupSpeakingDetection(stream: MediaStream) {
-    try {
-      const ctx = new AudioContext();
-      const src = ctx.createMediaStreamSource(stream);
-      const analyzer = ctx.createAnalyser();
-      analyzer.fftSize = 256;
-      src.connect(analyzer);
-      analyzerRef.current = analyzer;
+  // function setupSpeakingDetection(stream: MediaStream) {
+  //   try {
+  //     const ctx = new AudioContext();
+  //     const src = ctx.createMediaStreamSource(stream);
+  //     const analyzer = ctx.createAnalyser();
+  //     analyzer.fftSize = 256;
+  //     src.connect(analyzer);
+  //     analyzerRef.current = analyzer;
 
-      const buf = new Uint8Array(analyzer.frequencyBinCount);
-      function tick() {
-        analyzer.getByteFrequencyData(buf);
-        const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
-        setSpeaking(avg > 8);
+  //     const buf = new Uint8Array(analyzer.frequencyBinCount);
+  //     function tick() {
+  //       analyzer.getByteFrequencyData(buf);
+  //       const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+  //       setSpeaking(avg > 8);
+  //       animFrameRef.current = requestAnimationFrame(tick);
+  //     }
+  //     animFrameRef.current = requestAnimationFrame(tick);
+  //   } catch { }
+  // }
+    function setupSpeakingDetection(stream: MediaStream) {
+      try {
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(stream);
+        const analyzer = ctx.createAnalyser();
+        analyzer.fftSize = 256;
+        src.connect(analyzer);
+        analyzerRef.current = analyzer;
+
+        const buf = new Uint8Array(analyzer.frequencyBinCount);
+        function tick() {
+          analyzer.getByteFrequencyData(buf);
+          const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+          setSpeaking(avg > 8);
+          animFrameRef.current = requestAnimationFrame(tick);
+        }
         animFrameRef.current = requestAnimationFrame(tick);
-      }
-      animFrameRef.current = requestAnimationFrame(tick);
-    } catch { }
-  }
+      } catch {}
+    }
 
   async function startVoice() {
     setPhase("connecting");
@@ -465,7 +516,13 @@ export default function RoleplayPage() {
     setElapsed(0);
 
     try {
-      const tokenRes = await fetch("/api/roleplay/realtime-token", { method: "POST" });
+      const scenario = getScenarioById(scenarioId);
+      // const tokenRes = await fetch("/api/roleplay/realtime-token", { method: "POST" });
+      const tokenRes = await fetch("/api/roleplay/realtime-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenarioId: scenario.id }),
+        });
       const tokenData = await tokenRes.json();
 
       setSessionId(crypto.randomUUID());
@@ -499,20 +556,41 @@ export default function RoleplayPage() {
 
       dc.onopen = () => {
         // 1. Enable input transcription so YOUR voice gets captured
+        // dc.send(JSON.stringify({
+        //   type: "session.update",
+        //   session: {
+        //     input_audio_transcription: {
+        //       model: "whisper-1",
+        //     },
+        //   },
+        // }));
         dc.send(JSON.stringify({
           type: "session.update",
           session: {
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.85,
+              // prefix_padding_ms: 200,
+              // silence_duration_ms: 700
+            },
             input_audio_transcription: {
               model: "whisper-1",
-            },
-          },
+              language: "en"
+            }
+          }
         }));
-
+        const opening = buildOpeningInstructions(scenario);
         // 2. Kick off the buyer's opening line
+        // dc.send(JSON.stringify({
+        //   type: "response.create",
+        //   response: {
+        //     instructions: "Start the conversation as a cautious home buyer browsing homes but unsure about timing.",
+        //   },
+        // }));
         dc.send(JSON.stringify({
           type: "response.create",
           response: {
-            instructions: "Start the conversation as a cautious home buyer browsing homes but unsure about timing.",
+            instructions: opening,
           },
         }));
       };
@@ -526,6 +604,10 @@ export default function RoleplayPage() {
           msg.type === "conversation.item.input_audio_transcription.completed" &&
           msg.transcript
         ) {
+            const t = msg.transcript.trim();
+            if (isJunkTranscript(t)) return;           // ✅ drop junk
+            if (t === lastYouRef.current) return;       // ✅ drop duplicates
+            lastYouRef.current = t;
           const line = `Agent: ${msg.transcript.trim()}`;
           transcriptRef.current.push(line);
           setTranscriptLines((p) => [...p, line]);
@@ -583,7 +665,7 @@ export default function RoleplayPage() {
       const res = await fetch("/api/roleplay/analyze-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript, scenarioId }),
       });
       const data = await res.json();
       setAnalysis(data);
@@ -764,6 +846,54 @@ export default function RoleplayPage() {
           </h1>
           <p style={{ fontSize: 12, color: "#555" }}>You're the agent. The AI plays the buyer.</p>
         </div>
+
+        {phase === "idle" && (
+          <div style={{ padding: "18px 20px 0" }}>
+            <div
+              style={{
+                fontSize: 10,
+                color: "#444",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 10,
+              }}
+            >
+              Scenario
+            </div>
+
+            <select
+              value={scenarioId}
+              onChange={(e) => setScenarioId(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "12px 12px",
+                borderRadius: 14,
+                background: "#0d0d0d",
+                color: "#ddd",
+                border: "1px solid #1e1e1e",
+                outline: "none",
+                fontSize: 12,
+                fontFamily: "'DM Mono', monospace",
+              }}
+            >
+              {SCENARIOS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title} · {s.difficulty}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ marginTop: 10, fontSize: 11, color: "#666", lineHeight: 1.5 }}>
+              {getScenarioById(scenarioId).context.budgetRange
+                ? `Budget: ${getScenarioById(scenarioId).context.budgetRange}`
+                : "Budget: unknown"}
+              {" · "}
+              {getScenarioById(scenarioId).context.timeline
+                ? `Timeline: ${getScenarioById(scenarioId).context.timeline}`
+                : "Timeline: unknown"}
+            </div>
+          </div>
+        )}
 
         {/* ── VOICE VISUALIZER ── */}
         <div
