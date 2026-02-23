@@ -100,8 +100,8 @@ function InsightCard({
         border: `1px solid ${accent}22`,
         borderRadius: 16,
         padding: "16px 18px",
-        minWidth: "82vw",
-        maxWidth: 360,
+        minWidth: "calc(100% - 24px)",  // ← was "82vw"
+        maxWidth: "calc(100% - 24px)",  // ← was 360
         scrollSnapAlign: "center",
         flexShrink: 0,
       }}
@@ -138,7 +138,7 @@ function SwipeCards({ analysis }: { analysis: any }) {
   ];
 
   return (
-    <div style={{ marginTop: 24 }}>
+    <div style={{ marginTop: 24, overflow: "hidden" }}>
       <div
         style={{
           display: "flex",
@@ -157,7 +157,7 @@ function SwipeCards({ analysis }: { analysis: any }) {
           <InsightCard key={i} {...card} />
         ))}
       </div>
-      <div
+      {/* <div
         style={{
           display: "flex",
           justifyContent: "center",
@@ -177,7 +177,7 @@ function SwipeCards({ analysis }: { analysis: any }) {
             }}
           />
         ))}
-      </div>
+      </div> */}
       <p style={{ textAlign: "center", fontSize: 11, color: "#444", marginTop: 8 }}>
         Swipe to explore insights →
       </p>

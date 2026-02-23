@@ -54,26 +54,24 @@ function Waveform({ active, speaking }: { active: boolean; speaking: boolean }) 
 }
 
 /* ─────────────────────────────────────────────
-   SCORE RING
+   CATEGORY BAR — replaces ScoreRing
 ───────────────────────────────────────────── */
-function ScoreRing({
-  value,
+function CategoryBar({
   label,
+  value,
+  max,
   color,
-  inverse = false,
   delay = 0,
 }: {
-  value: number;
   label: string;
+  value: number;
+  max: number;
   color: string;
-  inverse?: boolean;
   delay?: number;
 }) {
   const [animated, setAnimated] = useState(false);
-  const pct = Math.max(0, Math.min(100, inverse ? 100 - value : value));
-  const r = 30;
-  const circ = 2 * Math.PI * r;
-  const dash = animated ? circ - (pct / 100) * circ : circ;
+  const safeValue = typeof value === "number" && !isNaN(value) ? value : 0;
+  const pct = animated ? Math.round((safeValue / max) * 100) : 0;
 
   useEffect(() => {
     const t = setTimeout(() => setAnimated(true), delay);
@@ -81,48 +79,34 @@ function ScoreRing({
   }, [delay]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-      <div style={{ position: "relative", width: 80, height: 80 }}>
-        <svg width="80" height="80" style={{ transform: "rotate(-90deg)" }}>
-          <circle cx="40" cy="40" r={r} fill="none" stroke="#222" strokeWidth="7" />
-          <circle
-            cx="40"
-            cy="40"
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="7"
-            strokeDasharray={circ}
-            strokeDashoffset={dash}
-            strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)" }}
-          />
-        </svg>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ fontSize: 11, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          {label}
+        </span>
+        <span style={{ fontSize: 12, fontFamily: "'DM Mono', monospace", color: color }}>
+          {safeValue}
+          <span style={{ color: "#444", fontSize: 10 }}>/{max}</span>
+        </span>
+      </div>
+      <div style={{ height: 6, background: "#1e1e1e", borderRadius: 99, overflow: "hidden" }}>
         <div
           style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 18,
-            fontWeight: 700,
-            fontFamily: "'DM Mono', monospace",
-            color: "#f5f5f5",
+            height: "100%",
+            width: `${pct}%`,
+            background: color,
+            borderRadius: 99,
+            transition: "width 1s cubic-bezier(.4,0,.2,1)",
+            boxShadow: `0 0 8px ${color}55`,
           }}
-        >
-          {value}
-        </div>
-      </div>
-      <div style={{ fontSize: 11, color: "#888", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-        {label}
+        />
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────
-   ANALYSIS SHEET
+   ANALYSIS SHEET — updated for new API shape
 ───────────────────────────────────────────── */
 function AnalysisSheet({ analysis, onClose }: { analysis: any; onClose: () => void }) {
   const [visible, setVisible] = useState(false);
@@ -140,6 +124,32 @@ function AnalysisSheet({ analysis, onClose }: { analysis: any; onClose: () => vo
     setVisible(false);
     setTimeout(onClose, 350);
   }
+
+  const scores = analysis.scores ?? {};
+  const maxes = analysis.score_maxes ?? {
+    conversation_control: 15,
+    emotional_calibration: 15,
+    market_intelligence: 20,
+    authority_confidence: 20,
+    objection_handling: 20,
+    strategic_close: 10,
+  };
+
+  const categories = [
+    { key: "conversation_control", label: "Conversation Control", color: "#4f8ef7" },
+    { key: "emotional_calibration", label: "Emotional Calibration", color: "#4caf82" },
+    { key: "market_intelligence", label: "Market Intelligence", color: "#f59e0b" },
+    { key: "authority_confidence", label: "Authority & Confidence", color: "#a78bfa" },
+    { key: "objection_handling", label: "Objection Handling", color: "#f87171" },
+    { key: "strategic_close", label: "Strategic Close", color: "#38bdf8" },
+  ];
+
+  const safeOverall = typeof analysis.overall_score === "number" && !isNaN(analysis.overall_score)
+    ? analysis.overall_score
+    : 0;
+
+  // Overall score color
+  const overallColor = safeOverall >= 75 ? "#4caf82" : safeOverall >= 50 ? "#f59e0b" : "#f87171";
 
   return (
     <div
@@ -189,39 +199,110 @@ function AnalysisSheet({ analysis, onClose }: { analysis: any; onClose: () => vo
             fontSize: 12,
             padding: "5px 12px",
             cursor: "pointer",
+            fontFamily: "'DM Mono', monospace",
           }}
         >
           Close ✕
         </button>
 
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
+        <div style={{ fontSize: 10, color: "#555", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
           Performance Review
         </div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f0f0f0", marginBottom: 28, fontFamily: "'Fraunces', serif" }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f0f0f0", marginBottom: 24, fontFamily: "'Fraunces', serif" }}>
           Session Analysis
         </h2>
 
-        {/* Score rings */}
+        {/* Overall score hero */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 16,
-            marginBottom: 32,
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
             background: "#111",
+            border: `1px solid ${overallColor}22`,
             borderRadius: 20,
-            padding: "24px 16px",
-            border: "1px solid #1e1e1e",
+            padding: "20px 24px",
+            marginBottom: 16,
           }}
         >
-          <ScoreRing value={analysis.overall_score} label="Overall" color="#4f8ef7" delay={100} />
-          <ScoreRing value={analysis.clarity_score} label="Clarity" color="#4caf82" delay={250} />
-          <ScoreRing value={analysis.discovery_score} label="Discovery" color="#a78bfa" delay={400} />
-          <ScoreRing value={analysis.pushiness_score} label="Pushiness" color="#f87171" inverse delay={550} />
+          <div>
+            <div style={{ fontSize: 10, color: "#555", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
+              Overall Score
+            </div>
+            <div style={{ fontSize: 48, fontWeight: 700, fontFamily: "'Fraunces', serif", color: overallColor, lineHeight: 1 }}>
+              {safeOverall}
+              <span style={{ fontSize: 20, color: "#333", fontFamily: "'DM Mono', monospace" }}>/100</span>
+            </div>
+          </div>
+          {analysis.biggest_improvement_area && (
+            <div
+              style={{
+                flex: 1,
+                background: "#0d0d0d",
+                border: "1px solid #1e1e1e",
+                borderRadius: 14,
+                padding: "12px 14px",
+              }}
+            >
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
+                Focus Area
+              </div>
+              <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5 }}>
+                {analysis.biggest_improvement_area}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Insight cards */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Category bars */}
+        <div
+          style={{
+            background: "#111",
+            border: "1px solid #1e1e1e",
+            borderRadius: 20,
+            padding: "20px",
+            marginBottom: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          {categories.map((cat, i) => (
+            <CategoryBar
+              key={cat.key}
+              label={cat.label}
+              value={scores[cat.key] ?? 0}
+              max={maxes[cat.key]}
+              color={cat.color}
+              delay={i * 100}
+            />
+          ))}
+        </div>
+
+        {/* Best & Risk moments */}
+        {(analysis.best_moment || analysis.risk_moment) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            {analysis.best_moment && (
+              <div style={{ background: "#0a1a10", border: "1px solid #4caf8222", borderRadius: 16, padding: "14px" }}>
+                <div style={{ fontSize: 10, color: "#4caf82", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, fontFamily: "'DM Mono', monospace" }}>
+                  ✦ Best Moment
+                </div>
+                <p style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5, margin: 0 }}>{analysis.best_moment}</p>
+              </div>
+            )}
+            {analysis.risk_moment && (
+              <div style={{ background: "#1a0a0a", border: "1px solid #f8717122", borderRadius: 16, padding: "14px" }}>
+                <div style={{ fontSize: 10, color: "#f87171", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, fontFamily: "'DM Mono', monospace" }}>
+                  ✧ Risky Moment
+                </div>
+                <p style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5, margin: 0 }}>{analysis.risk_moment}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Insight panels */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <InsightPanel title="✦ Strengths" items={analysis.strengths} accent="#4caf82" bg="#0a1a10" />
           <InsightPanel title="✧ Key Mistakes" items={analysis.key_mistakes} accent="#f87171" bg="#1a0a0a" />
           <InsightPanel title="◈ Missed Opportunities" items={analysis.missed_opportunities} accent="#f59e0b" bg="#1a1400" />
@@ -495,6 +576,8 @@ export default function RoleplayPage() {
     }
 
     const transcript = transcriptRef.current.join("\n");
+
+    console.log("Full transcript:", transcript);
 
     try {
       const res = await fetch("/api/roleplay/analyze-session", {

@@ -1,9 +1,77 @@
 // frontend/app/api/roleplay/analyze-session/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getSession } from "@/app/lib/roleplay/sessionStore";
 
 export const runtime = "nodejs";
+
+const SCORING_PROMPT = `
+You are an expert real estate sales coach evaluating a roleplay session transcript.
+
+Score the agent (YOU) across these 6 categories. Each score is 0–100:
+
+1. Conversation Control (max 15 pts)
+   - Did the agent guide the conversation with purpose?
+   - Did they set an agenda, manage pace, and avoid rambling?
+
+2. Emotional Calibration (max 15 pts)
+   - Did the agent match the buyer's emotional state?
+   - Did they show empathy, read hesitation, and adjust tone accordingly?
+
+3. Market Intelligence (max 20 pts)
+   - Did the agent demonstrate knowledge of the market, pricing, or inventory?
+   - Did they use data or insights to build credibility?
+
+4. Authority & Confidence (max 20 pts)
+   - Did the agent speak with conviction?
+   - Did they avoid filler language, over-apologizing, or seeming uncertain?
+
+5. Objection Handling (max 20 pts)
+   - Did the agent address concerns directly without being dismissive?
+   - Did they reframe objections into opportunities?
+
+6. Strategic Close (max 10 pts)
+   - Did the agent move toward a next step, commitment, or appointment?
+   - Did they create urgency without being pushy?
+
+Also identify:
+- Top 3 strengths (specific moments or behaviors)
+- Top 3 key mistakes (specific moments or behaviors)  
+- Top 3 missed opportunities
+- The single riskiest moment
+- The single best moment
+- The biggest improvement area
+- A 3–4 sentence coaching summary that is direct, actionable, and encouraging
+
+Return ONLY valid JSON in this exact format, no markdown:
+{
+  "scores": {
+    "conversation_control": 0,
+    "emotional_calibration": 0,
+    "market_intelligence": 0,
+    "authority_confidence": 0,
+    "objection_handling": 0,
+    "strategic_close": 0
+  },
+  "strengths": ["", "", ""],
+  "key_mistakes": ["", "", ""],
+  "missed_opportunities": ["", "", ""],
+  "risk_moment": "",
+  "best_moment": "",
+  "biggest_improvement_area": "",
+  "coaching_summary": ""
+}
+
+Score ranges per category:
+- conversation_control: 0–15
+- emotional_calibration: 0–15
+- market_intelligence: 0–20
+- authority_confidence: 0–20
+- objection_handling: 0–20
+- strategic_close: 0–10
+
+Be strict but fair. A score of 70+ should feel earned.
+If the transcript is very short or empty, give low scores and note the session was too brief to evaluate properly.
+`.trim();
 
 export async function POST(req: Request) {
   try {
@@ -15,102 +83,27 @@ export async function POST(req: Request) {
       );
     }
 
-    const { sessionId } = await req.json();
-    if (!sessionId) {
-      return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
-    }
+    const body = await req.json();
+    const transcript: string = body.transcript ?? "";
 
-    const session = getSession(sessionId);
-    if (!session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    if (!transcript.trim()) {
+      return NextResponse.json(
+        { error: "No transcript provided" },
+        { status: 400 },
+      );
     }
 
     const openai = new OpenAI({ apiKey });
 
-    const turnAnalyses = session.turnAnalyses ?? [];
-
-    /* ---------------------------------------------------
-       1️⃣ Deterministic Numeric Aggregation
-    ---------------------------------------------------- */
-
-    const avg = (arr: number[]) =>
-      arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length;
-
-    const pushinessAvg = avg(
-      turnAnalyses.map((t) => t.analysis.pushiness_score ?? 0),
-    );
-
-    const clarityAvg = avg(
-      turnAnalyses.map((t) => t.analysis.clarity_score ?? 0),
-    );
-
-    const discoveryAvg = avg(
-      turnAnalyses.map((t) => t.analysis.discovery_score ?? 0),
-    );
-
-    const overallScore = Math.round(
-      (clarityAvg * 0.3 + discoveryAvg * 0.4 + (1 - pushinessAvg) * 0.3) * 100,
-    );
-
-    /* ---------------------------------------------------
-       2️⃣ Prepare Transcript For LLM Insight
-    ---------------------------------------------------- */
-
-    const transcript = session.messages
-      .map((m) => `${m.role}: ${m.text}`)
-      .join("\n");
-
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.2,
+      response_format: { type: "json_object" },
       messages: [
-        {
-          role: "system",
-          content: `
-You are an expert real estate sales coach evaluating a full roleplay session.
-
-You will receive:
-- The full transcript
-- Numeric metrics derived from structured turn analysis
-
-Your job:
-1. Identify major strengths
-2. Identify key mistakes
-3. Identify missed opportunities
-4. Identify the riskiest moment
-5. Identify the best moment
-6. Provide a concise coaching summary
-
-Be specific and actionable.
-
-Return ONLY valid JSON in EXACT format:
-
-{
-  "strengths": [],
-  "key_mistakes": [],
-  "missed_opportunities": [],
-  "risk_moment": "",
-  "best_moment": "",
-  "biggest_improvement_area": "",
-  "coaching_summary": "",
-  "confidence": 0.0
-}
-
-Confidence must be between 0.3 and 0.95.
-`.trim(),
-        },
+        { role: "system", content: SCORING_PROMPT },
         {
           role: "user",
-          content: `
-Numeric Metrics:
-overall_score: ${overallScore}
-clarity_avg: ${clarityAvg.toFixed(2)}
-discovery_avg: ${discoveryAvg.toFixed(2)}
-pushiness_avg: ${pushinessAvg.toFixed(2)}
-
-Transcript:
-${transcript}
-`.trim(),
+          content: `Evaluate this real estate agent roleplay transcript:\n\n${transcript}`,
         },
       ],
     });
@@ -118,27 +111,50 @@ ${transcript}
     const raw = completion.choices[0].message.content;
     if (!raw) throw new Error("Empty LLM response");
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      const match = raw.match(/\{[\s\S]*\}$/);
-      if (!match) throw new Error("Invalid JSON from session analyzer");
-      parsed = JSON.parse(match[0]);
-    }
+    const parsed = JSON.parse(raw);
+    const s = parsed.scores ?? {};
 
-    parsed.confidence = clampConfidence(parsed.confidence);
+    // Clamp each score to its allowed max
+    const conversationControl = clamp(s.conversation_control ?? 0, 0, 15);
+    const emotionalCalibration = clamp(s.emotional_calibration ?? 0, 0, 15);
+    const marketIntelligence = clamp(s.market_intelligence ?? 0, 0, 20);
+    const authorityConfidence = clamp(s.authority_confidence ?? 0, 0, 20);
+    const objectionHandling = clamp(s.objection_handling ?? 0, 0, 20);
+    const strategicClose = clamp(s.strategic_close ?? 0, 0, 10);
 
-    /* ---------------------------------------------------
-       3️⃣ Final Structured Output
-    ---------------------------------------------------- */
+    const overallScore =
+      conversationControl +
+      emotionalCalibration +
+      marketIntelligence +
+      authorityConfidence +
+      objectionHandling +
+      strategicClose;
 
     return NextResponse.json({
+      // Overall (0–100)
       overall_score: overallScore,
-      clarity_score: Math.round(clarityAvg * 100),
-      discovery_score: Math.round(discoveryAvg * 100),
-      pushiness_score: Math.round(pushinessAvg * 100),
 
+      // Category scores
+      scores: {
+        conversation_control: conversationControl,
+        emotional_calibration: emotionalCalibration,
+        market_intelligence: marketIntelligence,
+        authority_confidence: authorityConfidence,
+        objection_handling: objectionHandling,
+        strategic_close: strategicClose,
+      },
+
+      // Category maxes (useful for rendering % bars in UI)
+      score_maxes: {
+        conversation_control: 15,
+        emotional_calibration: 15,
+        market_intelligence: 20,
+        authority_confidence: 20,
+        objection_handling: 20,
+        strategic_close: 10,
+      },
+
+      // Qualitative insights
       strengths: parsed.strengths ?? [],
       key_mistakes: parsed.key_mistakes ?? [],
       missed_opportunities: parsed.missed_opportunities ?? [],
@@ -146,9 +162,9 @@ ${transcript}
       best_moment: parsed.best_moment ?? "",
       biggest_improvement_area: parsed.biggest_improvement_area ?? "",
       coaching_summary: parsed.coaching_summary ?? "",
-      confidence: parsed.confidence,
     });
   } catch (err: any) {
+    console.error("[analyze-session]", err);
     return NextResponse.json(
       { error: err?.message ?? "Analyze-session failed" },
       { status: 500 },
@@ -156,8 +172,6 @@ ${transcript}
   }
 }
 
-function clampConfidence(value: any) {
-  const n = Number(value);
-  if (isNaN(n)) return 0.7;
-  return Math.max(0.3, Math.min(0.95, n));
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
 }

@@ -20,7 +20,7 @@ export default function AudioRecorder({ onRecorded }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950 p-5">
+    <div style={{ padding: "15px 15px" }} className="rounded-2xl border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950 p-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -43,6 +43,7 @@ export default function AudioRecorder({ onRecorded }: Props) {
         {!isRecording && !audioUrl && (
           <button
             onClick={start}
+            style={{ margin: "8px 0px 8px", padding: "5px 5px" }}
             className="flex items-center gap-2 rounded-xl bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 active:scale-95"
           >
             <span className="h-2 w-2 rounded-full bg-white" />
@@ -53,6 +54,7 @@ export default function AudioRecorder({ onRecorded }: Props) {
         {isRecording && (
           <button
             onClick={stop}
+            style={{ margin: "8px 0px 8px", padding: "5px 5px" }}
             className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 active:scale-95"
           >
             Stop recording
@@ -67,6 +69,7 @@ export default function AudioRecorder({ onRecorded }: Props) {
                 if (!file) return;
                 onRecorded(file);
               }}
+              style={{ margin: "8px 0px 8px", padding: "5px 5px" }}
               className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-neutral-950 transition hover:bg-neutral-200"
             >
               Use recording
@@ -88,15 +91,15 @@ export default function AudioRecorder({ onRecorded }: Props) {
       {/* Hidden audio */}
       {audioUrl && (
         <audio
-            ref={audioRef}
-            src={audioUrl}
-            controls
-            playsInline
-            preload="metadata"
-            onEnded={() => setIsPlaying(false)}
-            className="mt-3 w-full rounded-lg"
+          ref={audioRef}
+          src={audioUrl}
+          controls
+          playsInline
+          preload="metadata"
+          onEnded={() => setIsPlaying(false)}
+          className="mt-3 w-full rounded-lg"
         />
-            )}
-            </div>
+      )}
+    </div>
   );
 }
