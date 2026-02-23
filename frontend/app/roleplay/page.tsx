@@ -3,446 +3,992 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type ChatMsg = {
-  role: "Customer" | "Agent";
-  text: string;
-  ts: number;
-  meta?: Record<string, any>;
-};
+/* ─────────────────────────────────────────────
+   TYPES
+───────────────────────────────────────────── */
+type Phase = "idle" | "connecting" | "live" | "ending" | "done";
 
+/* ─────────────────────────────────────────────
+   HELPERS
+───────────────────────────────────────────── */
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+function formatTime(s: number) {
+  const m = Math.floor(s / 60);
+  return `${pad(m)}:${pad(s % 60)}`;
+}
+
+/* ─────────────────────────────────────────────
+   WAVEFORM – animated SVG bars
+───────────────────────────────────────────── */
+function Waveform({ active, speaking }: { active: boolean; speaking: boolean }) {
+  const bars = 28;
+  return (
+    <div
+      className="waveform"
+      aria-hidden
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 3,
+        height: 56,
+      }}
+    >
+      {Array.from({ length: bars }).map((_, i) => (
+        <div
+          key={i}
+          className="wave-bar"
+          style={
+            {
+              "--i": i,
+              "--bars": bars,
+              animationPlayState: active && speaking ? "running" : "paused",
+              opacity: active ? 1 : 0.2,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   SCORE RING
+───────────────────────────────────────────── */
+function ScoreRing({
+  value,
+  label,
+  color,
+  inverse = false,
+  delay = 0,
+}: {
+  value: number;
+  label: string;
+  color: string;
+  inverse?: boolean;
+  delay?: number;
+}) {
+  const [animated, setAnimated] = useState(false);
+  const pct = Math.max(0, Math.min(100, inverse ? 100 - value : value));
+  const r = 30;
+  const circ = 2 * Math.PI * r;
+  const dash = animated ? circ - (pct / 100) * circ : circ;
+
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+      <div style={{ position: "relative", width: 80, height: 80 }}>
+        <svg width="80" height="80" style={{ transform: "rotate(-90deg)" }}>
+          <circle cx="40" cy="40" r={r} fill="none" stroke="#222" strokeWidth="7" />
+          <circle
+            cx="40"
+            cy="40"
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth="7"
+            strokeDasharray={circ}
+            strokeDashoffset={dash}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)" }}
+          />
+        </svg>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            fontWeight: 700,
+            fontFamily: "'DM Mono', monospace",
+            color: "#f5f5f5",
+          }}
+        >
+          {value}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "#888", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   ANALYSIS SHEET
+───────────────────────────────────────────── */
+function AnalysisSheet({ analysis, onClose }: { analysis: any; onClose: () => void }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") handleClose();
+    }
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, []);
+
+  function handleClose() {
+    setVisible(false);
+    setTimeout(onClose, 350);
+  }
+
+  return (
+    <div
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 60,
+        background: visible ? "rgba(0,0,0,0.72)" : "rgba(0,0,0,0)",
+        backdropFilter: "blur(6px)",
+        transition: "background 0.35s",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 680,
+          maxHeight: "92vh",
+          overflowY: "auto",
+          background: "#0d0d0d",
+          borderTop: "1px solid #2a2a2a",
+          borderLeft: "1px solid #2a2a2a",
+          borderRight: "1px solid #2a2a2a",
+          borderRadius: "24px 24px 0 0",
+          padding: "28px 24px 48px",
+          transform: visible ? "translateY(0)" : "translateY(100%)",
+          transition: "transform 0.38s cubic-bezier(.32,1.2,.4,1)",
+        }}
+      >
+        {/* Handle */}
+        <div style={{ width: 40, height: 4, background: "#333", borderRadius: 99, margin: "0 auto 24px" }} />
+
+        {/* Close */}
+        <button
+          onClick={handleClose}
+          style={{
+            position: "absolute",
+            top: 20,
+            right: 20,
+            background: "#1a1a1a",
+            border: "1px solid #333",
+            borderRadius: 99,
+            color: "#aaa",
+            fontSize: 12,
+            padding: "5px 12px",
+            cursor: "pointer",
+          }}
+        >
+          Close ✕
+        </button>
+
+        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
+          Performance Review
+        </div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f0f0f0", marginBottom: 28, fontFamily: "'Fraunces', serif" }}>
+          Session Analysis
+        </h2>
+
+        {/* Score rings */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 16,
+            marginBottom: 32,
+            background: "#111",
+            borderRadius: 20,
+            padding: "24px 16px",
+            border: "1px solid #1e1e1e",
+          }}
+        >
+          <ScoreRing value={analysis.overall_score} label="Overall" color="#4f8ef7" delay={100} />
+          <ScoreRing value={analysis.clarity_score} label="Clarity" color="#4caf82" delay={250} />
+          <ScoreRing value={analysis.discovery_score} label="Discovery" color="#a78bfa" delay={400} />
+          <ScoreRing value={analysis.pushiness_score} label="Pushiness" color="#f87171" inverse delay={550} />
+        </div>
+
+        {/* Insight cards */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <InsightPanel title="✦ Strengths" items={analysis.strengths} accent="#4caf82" bg="#0a1a10" />
+          <InsightPanel title="✧ Key Mistakes" items={analysis.key_mistakes} accent="#f87171" bg="#1a0a0a" />
+          <InsightPanel title="◈ Missed Opportunities" items={analysis.missed_opportunities} accent="#f59e0b" bg="#1a1400" />
+          <CoachingPanel content={analysis.coaching_summary} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InsightPanel({ title, items, accent, bg }: { title: string; items: string[]; accent: string; bg: string }) {
+  return (
+    <div
+      style={{
+        background: bg,
+        border: `1px solid ${accent}22`,
+        borderRadius: 16,
+        padding: "16px 18px",
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, color: accent, marginBottom: 10, letterSpacing: "0.04em" }}>
+        {title}
+      </div>
+      {items && items.length > 0 ? (
+        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+          {items.map((item, i) => (
+            <li key={i} style={{ fontSize: 13, color: "#ccc", lineHeight: 1.5, display: "flex", gap: 8 }}>
+              <span style={{ color: accent, flexShrink: 0 }}>—</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div style={{ fontSize: 13, color: "#555" }}>None detected.</div>
+      )}
+    </div>
+  );
+}
+
+function CoachingPanel({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      style={{
+        background: "#111",
+        border: "1px solid #2a2a2a",
+        borderRadius: 16,
+        padding: "16px 18px",
+      }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: 0,
+          color: "#e0e0e0",
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.04em",
+        }}
+      >
+        <span>◎ Coaching Summary</span>
+        <span
+          style={{
+            color: "#555",
+            fontSize: 11,
+            fontFamily: "'DM Mono', monospace",
+            transform: open ? "rotate(180deg)" : "none",
+            transition: "transform 0.2s",
+            display: "inline-block",
+          }}
+        >
+          ▾
+        </span>
+      </button>
+
+      <div
+        style={{
+          maxHeight: open ? 400 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.35s cubic-bezier(.4,0,.2,1)",
+        }}
+      >
+        <div style={{ marginTop: 12, fontSize: 13, color: "#aaa", lineHeight: 1.7 }}>
+          {content}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   MAIN PAGE
+───────────────────────────────────────────── */
 export default function RoleplayPage() {
   const router = useRouter();
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [stageId, setStageId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [speaking, setSpeaking] = useState(false); // crude toggle for viz
+  const [elapsed, setElapsed] = useState(0);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const transcriptRef = useRef<string[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const analyzerRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number | null>(null);
 
-  const started = useMemo(() => !!sessionId, [sessionId]);
+  const started = phase !== "idle" && phase !== "done";
 
+  /* timer */
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
-
-  /* -------------------------------
-     START ROLEPLAY
-  --------------------------------*/
-  async function start() {
-    setLoading(true);
-    setAnalysis(null);
-
-    try {
-      const res = await fetch("/api/roleplay/start", { method: "POST" });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data?.error ?? "Failed to start roleplay");
-
-      setSessionId(data.sessionId);
-      setStageId(data.stageId);
-
-      setMessages([
-        {
-          role: "Customer",
-          text: data.botMessage.text,
-          ts: Date.now(),
-          meta: data.botMessage.meta,
-        },
-      ]);
-    } catch (e: any) {
-      alert(e?.message ?? "Error starting roleplay");
-    } finally {
-      setLoading(false);
+    if (phase === "live") {
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (phase === "idle" || phase === "done") setElapsed(0);
     }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [phase]);
+
+  /* speaking detection via analyser */
+  function setupSpeakingDetection(stream: MediaStream) {
+    try {
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyzer = ctx.createAnalyser();
+      analyzer.fftSize = 256;
+      src.connect(analyzer);
+      analyzerRef.current = analyzer;
+
+      const buf = new Uint8Array(analyzer.frequencyBinCount);
+      function tick() {
+        analyzer.getByteFrequencyData(buf);
+        const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+        setSpeaking(avg > 8);
+        animFrameRef.current = requestAnimationFrame(tick);
+      }
+      animFrameRef.current = requestAnimationFrame(tick);
+    } catch { }
   }
 
-  /* -------------------------------
-     SEND AGENT MESSAGE
-  --------------------------------*/
-  async function send() {
-    if (!sessionId) return;
-
-    const text = input.trim();
-    if (!text) return;
-
-    setInput("");
-    setMessages((prev) => [
-      ...prev,
-      { role: "Agent", text, ts: Date.now() },
-    ]);
-    setLoading(true);
+  async function startVoice() {
+    setPhase("connecting");
+    setTranscriptLines([]);
+    transcriptRef.current = [];
+    setAnalysis(null);
+    setElapsed(0);
 
     try {
-      const res = await fetch("/api/roleplay/respond", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, agentMessage: text }),
+      const tokenRes = await fetch("/api/roleplay/realtime-token", { method: "POST" });
+      const tokenData = await tokenRes.json();
+
+      setSessionId(crypto.randomUUID());
+
+      const pc = new RTCPeerConnection();
+      pcRef.current = pc;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Failed to send response");
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      setupSpeakingDetection(stream);
 
-      setStageId(data.stageId);
+      const audioEl = new Audio();
+      audioEl.autoplay = true;
+      audioRef.current = audioEl;
 
-      if (data.done) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "Customer",
-            text: "Thanks — that’s helpful. (End of roleplay)",
-            ts: Date.now(),
+      pc.ontrack = (e) => {
+        audioEl.srcObject = e.streams[0];
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "connected") setPhase("live");
+        else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+          setPhase("idle");
+        }
+      };
+
+      const dc = pc.createDataChannel("oai-events");
+
+      dc.onopen = () => {
+        // 1. Enable input transcription so YOUR voice gets captured
+        dc.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            input_audio_transcription: {
+              model: "whisper-1",
+            },
           },
-        ]);
-        return;
-      }
+        }));
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "Customer",
-          text: data.botMessage.text,
-          ts: Date.now(),
-          meta: data.botMessage.meta,
+        // 2. Kick off the buyer's opening line
+        dc.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            instructions: "Start the conversation as a cautious home buyer browsing homes but unsure about timing.",
+          },
+        }));
+      };
+
+      dc.onmessage = (event) => {
+        let msg: any;
+        try { msg = JSON.parse(event.data); } catch { return; }
+
+        // YOUR voice (agent) — fires after Whisper processes each utterance
+        if (
+          msg.type === "conversation.item.input_audio_transcription.completed" &&
+          msg.transcript
+        ) {
+          const line = `Agent: ${msg.transcript.trim()}`;
+          transcriptRef.current.push(line);
+          setTranscriptLines((p) => [...p, line]);
+        }
+
+        // AI buyer voice — delta builds up the text, .done has the full turn
+        if (msg.type === "response.audio_transcript.done" && msg.transcript) {
+          const line = `Buyer: ${msg.transcript.trim()}`;
+          transcriptRef.current.push(line);
+          setTranscriptLines((p) => [...p, line]);
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const baseUrl = "https://api.openai.com/v1/realtime";
+      const model = "gpt-realtime";
+
+      const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${tokenData.client_secret.value}`,
+          "Content-Type": "application/sdp",
         },
-      ]);
+        body: offer.sdp,
+      });
+
+      const answer = { type: "answer", sdp: await sdpResponse.text() };
+      await pc.setRemoteDescription(answer as any);
     } catch (e: any) {
-      alert(e?.message ?? "Error sending message");
-    } finally {
-      setLoading(false);
+      alert(e?.message ?? "Failed to start session");
+      setPhase("idle");
     }
   }
 
-  /* -------------------------------
-     GET SESSION ANALYSIS
-  --------------------------------*/
-  async function getAnalysis() {
-    if (!sessionId) return;
+  async function endRoleplay() {
+    setPhase("ending");
 
-    setAnalyzing(true);
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    setSpeaking(false);
+
+    const pc = pcRef.current;
+    if (pc) {
+      pc.getSenders().forEach((s) => s.track?.stop());
+      pc.close();
+      pcRef.current = null;
+    }
+
+    const transcript = transcriptRef.current.join("\n");
 
     try {
       const res = await fetch("/api/roleplay/analyze-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId })
+        body: JSON.stringify({ transcript }),
       });
-
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Failed to analyze session");
-
       setAnalysis(data);
-      setAnalysisOpen(true); // open modal
-    } catch (e: any) {
-      alert(e?.message ?? "Error analyzing session");
-    } finally {
-      setAnalyzing(false);
+      setPhase("done");
+      setAnalysisOpen(true);
+    } catch {
+      setPhase("done");
     }
   }
 
+  const phaseLabel: Record<Phase, string> = {
+    idle: "Ready to practice",
+    connecting: "Connecting...",
+    live: "Live session",
+    ending: "Analyzing...",
+    done: "Session complete",
+  };
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
+  const phaseColor: Record<Phase, string> = {
+    idle: "#555",
+    connecting: "#f59e0b",
+    live: "#4caf82",
+    ending: "#a78bfa",
+    done: "#4f8ef7",
+  };
 
   return (
-    <main className="min-h-screen bg-black px-4 py-8 text-white">
-      <div className="mx-auto max-w-3xl">
-        {/* Header */}
-        <header className="mb-6 flex items-start justify-between gap-3">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-xs text-neutral-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent-500" />
-              AgentCoach AI
-            </div>
+    <>
+      {/* Global styles */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@400;500&display=swap');
 
-            <h1 className="mt-4 text-2xl font-semibold">Roleplay Chat</h1>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
-            <p className="mt-2 text-sm text-neutral-400">
-              Customer is the bot. You respond as the agent.
-            </p>
+        body { background: #080808; }
 
-            <p className="mt-2 text-xs text-neutral-500">
-              {stageId ? `Stage: ${stageId}` : "Not started"}
-            </p>
-          </div>
+        .wave-bar {
+          width: 3px;
+          border-radius: 99px;
+          background: #4caf82;
+          animation: wave 0.9s ease-in-out infinite alternate;
+          animation-delay: calc(var(--i) * (0.9s / var(--bars)));
+          min-height: 4px;
+        }
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push("/")}
-              className="rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-900"
-            >
-              Back
-            </button>
+        @keyframes wave {
+          0%   { height: 4px; opacity: 0.4; }
+          50%  { height: 36px; opacity: 0.9; }
+          100% { height: 8px; opacity: 0.6; }
+        }
 
-            {!started && (
-              <button
-                onClick={start}
-                disabled={loading}
-                className="rounded-xl bg-white px-4 py-2 text-sm font-medium text-neutral-950 disabled:opacity-50"
-              >
-                Start
-              </button>
-            )}
+        .pulse-ring {
+          animation: pulse-ring 2s ease-out infinite;
+        }
+        @keyframes pulse-ring {
+          0%   { transform: scale(0.95); opacity: 0.5; }
+          70%  { transform: scale(1.12); opacity: 0; }
+          100% { transform: scale(0.95); opacity: 0; }
+        }
 
-            {started && (
-              <button
-                onClick={getAnalysis}
-                disabled={analyzing}
-                className="rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-900 disabled:opacity-50"
-              >
-                {analyzing ? "Analyzing..." : "Get Analysis"}
-              </button>
-            )}
-          </div>
-        </header>
+        .transcript-line {
+          animation: slide-in 0.25s ease-out both;
+        }
+        @keyframes slide-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
 
-        {/* Chat */}
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4">
-          <div className="h-[60vh] overflow-y-auto space-y-3 pr-2">
-            {messages.length === 0 && (
-              <div className="text-sm text-neutral-400">
-                Click <span className="text-white">Start</span> to begin the roleplay.
-              </div>
-            )}
+        .btn-end {
+          position: relative;
+          overflow: hidden;
+        }
+        .btn-end::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: rgba(255,255,255,0.06);
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .btn-end:active::after { opacity: 1; }
+      `}</style>
 
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex ${m.role === "Agent" ? "justify-end" : "justify-start"
-                  }`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${m.role === "Agent"
-                    ? "bg-white text-neutral-950"
-                    : "border border-neutral-800 bg-neutral-950 text-neutral-100"
-                    }`}
-                >
-                  <div className="mb-1 text-[11px] opacity-70">
-                    {m.role}
-                  </div>
-                  <div>{m.text}</div>
-                </div>
-              </div>
-            ))}
-
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Input */}
-          <div className="mt-4 flex gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
-              disabled={!started || loading}
-              placeholder={
-                !started
-                  ? "Click Start first..."
-                  : "Type your response as the agent..."
-              }
-              className="flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 outline-none focus:border-neutral-700 disabled:opacity-50"
-            />
-
-            <button
-              onClick={send}
-              disabled={!started || loading || input.trim().length === 0}
-              className="rounded-xl bg-white px-4 py-3 text-sm font-medium text-neutral-950 disabled:opacity-50"
-            >
-              Send
-            </button>
-          </div>
-
-          <div className="mt-3 text-xs text-neutral-500">
-            MVP: sessions are in-memory. If the dev server restarts, sessions reset.
-          </div>
-        </section>
-
-        {/* Analysis Panel */}
-        {analysisOpen && analysis && (
-          <AnalysisModal
-            analysis={analysis}
-            onClose={() => setAnalysisOpen(false)}
-          />
-        )}
-
-
-      </div>
-    </main>
-  );
-
-  function AnalysisModal({
-    analysis,
-    onClose
-  }: {
-    analysis: any;
-    onClose: () => void;
-  }) {
-    useEffect(() => {
-      function handleEsc(e: KeyboardEvent) {
-        if (e.key === "Escape") onClose();
-      }
-      window.addEventListener("keydown", handleEsc);
-      return () => window.removeEventListener("keydown", handleEsc);
-    }, [onClose]);
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-        <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl border border-neutral-800 bg-neutral-950 p-8 shadow-2xl">
-
-          {/* Close Button */}
+      <main
+        style={{
+          minHeight: "100dvh",
+          background: "#080808",
+          color: "#f0f0f0",
+          fontFamily: "'DM Mono', monospace",
+          display: "flex",
+          flexDirection: "column",
+          padding: "0 0 32px",
+          maxWidth: 480,
+          margin: "0 auto",
+        }}
+      >
+        {/* ── TOP NAV ── */}
+        <nav
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "20px 20px 0",
+          }}
+        >
           <button
-            onClick={onClose}
-            className="absolute right-6 top-6 text-sm text-neutral-400 hover:text-white"
+            onClick={() => router.push("/")}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "#666",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
           >
-            Close ✕
+            ← Back
           </button>
 
-          {/* Title */}
-          <h2 className="mb-6 text-2xl font-semibold">Session Performance Review</h2>
-
-          {/* Score Overview */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 mb-8">
-            <ScoreCard label="Overall" value={analysis.overall_score} accent="bg-blue-600" />
-            <ScoreCard label="Clarity" value={analysis.clarity_score} accent="bg-green-600" />
-            <ScoreCard label="Discovery" value={analysis.discovery_score} accent="bg-purple-600" />
-            <ScoreCard label="Pushiness" value={analysis.pushiness_score} accent="bg-red-600" inverse />
-          </div>
-
-          {/* Insight Cards */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <InsightCard
-              title="Strengths"
-              items={analysis.strengths}
-              tone="positive"
-            />
-
-            <InsightCard
-              title="Key Mistakes"
-              items={analysis.key_mistakes}
-              tone="negative"
-            />
-
-            <InsightCard
-              title="Missed Opportunities"
-              items={analysis.missed_opportunities}
-              tone="neutral"
-            />
-
-            <ExpandableCard
-              title="Coaching Summary"
-              content={analysis.coaching_summary}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function ScoreCard({
-    label,
-    value,
-    accent,
-    inverse = false
-  }: {
-    label: string;
-    value: number;
-    accent: string;
-    inverse?: boolean;
-  }) {
-    const percent = Math.max(0, Math.min(100, value));
-
-    return (
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-        <div className="text-xs text-neutral-400">{label}</div>
-
-        <div className="mt-2 flex items-end justify-between">
-          <div className="text-2xl font-semibold">{percent}</div>
-          <div className="text-xs text-neutral-500">/ 100</div>
-        </div>
-
-        <div className="mt-3 h-2 w-full rounded-full bg-neutral-800">
+          {/* Status chip */}
           <div
-            className={`h-2 rounded-full ${accent}`}
-            style={{ width: `${inverse ? 100 - percent : percent}%` }}
-          />
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              background: "#111",
+              border: `1px solid ${phaseColor[phase]}33`,
+              borderRadius: 99,
+              padding: "5px 12px",
+              fontSize: 11,
+              color: phaseColor[phase],
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              transition: "color 0.3s, border-color 0.3s",
+            }}
+          >
+            <div
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: phaseColor[phase],
+                transition: "background 0.3s",
+                boxShadow: phase === "live" ? `0 0 8px ${phaseColor.live}` : "none",
+              }}
+            />
+            {phaseLabel[phase]}
+          </div>
+        </nav>
+
+        {/* ── HERO ── */}
+        <div style={{ padding: "32px 20px 0", textAlign: "center" }}>
+          <p
+            style={{
+              fontSize: 10,
+              color: "#444",
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              marginBottom: 8,
+              fontFamily: "'DM Mono', monospace",
+            }}
+          >
+            AgentCoach AI
+          </p>
+          <h1
+            style={{
+              fontSize: 30,
+              fontFamily: "'Fraunces', serif",
+              fontWeight: 700,
+              color: "#f5f5f5",
+              lineHeight: 1.15,
+              marginBottom: 8,
+            }}
+          >
+            Roleplay Practice
+          </h1>
+          <p style={{ fontSize: 12, color: "#555" }}>You're the agent. The AI plays the buyer.</p>
         </div>
-      </div>
-    );
-  }
 
-  function InsightCard({
-    title,
-    items,
-    tone
-  }: {
-    title: string;
-    items: string[];
-    tone: "positive" | "negative" | "neutral";
-  }) {
-    const toneStyles =
-      tone === "positive"
-        ? "border-green-700 bg-green-950/30"
-        : tone === "negative"
-          ? "border-red-700 bg-red-950/30"
-          : "border-neutral-800 bg-neutral-900";
-
-    return (
-      <div className={`rounded-2xl border p-4 ${toneStyles}`}>
-        <div className="mb-2 text-sm font-medium">{title}</div>
-
-        {items && items.length > 0 ? (
-          <ul className="space-y-2 text-sm text-neutral-300">
-            {items.map((item, i) => (
-              <li key={i} className="leading-relaxed">
-                • {item}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="text-sm text-neutral-500">No major issues detected.</div>
-        )}
-      </div>
-    );
-  }
-
-  function ExpandableCard({
-    title,
-    content
-  }: {
-    title: string;
-    content: string;
-  }) {
-    const [open, setOpen] = useState(false);
-
-    return (
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4">
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex w-full items-center justify-between text-sm font-medium"
+        {/* ── VOICE VISUALIZER ── */}
+        <div
+          style={{
+            margin: "40px auto 0",
+            width: 200,
+            height: 200,
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          {title}
-          <span className="text-xs text-neutral-500">
-            {open ? "Hide" : "Expand"}
-          </span>
-        </button>
+          {/* Pulse rings */}
+          {phase === "live" && (
+            <>
+              <div
+                className="pulse-ring"
+                style={{
+                  position: "absolute",
+                  inset: 10,
+                  borderRadius: "50%",
+                  border: `1px solid ${phaseColor.live}`,
+                  animationDelay: "0s",
+                }}
+              />
+              <div
+                className="pulse-ring"
+                style={{
+                  position: "absolute",
+                  inset: 10,
+                  borderRadius: "50%",
+                  border: `1px solid ${phaseColor.live}`,
+                  animationDelay: "0.7s",
+                }}
+              />
+            </>
+          )}
 
-        {open && (
-          <div className="mt-3 text-sm leading-relaxed text-neutral-300">
-            {content}
+          {/* Center disc */}
+          <div
+            style={{
+              width: 140,
+              height: 140,
+              borderRadius: "50%",
+              background: "#101010",
+              border: `2px solid ${phase === "live" ? phaseColor.live + "55" : "#1e1e1e"}`,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              transition: "border-color 0.4s",
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            {phase === "idle" || phase === "done" ? (
+              <div style={{ fontSize: 36 }}>🎙</div>
+            ) : phase === "connecting" ? (
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  border: "3px solid #333",
+                  borderTopColor: "#f59e0b",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+            ) : phase === "ending" ? (
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  border: "3px solid #333",
+                  borderTopColor: "#a78bfa",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+            ) : (
+              <Waveform active={phase === "live"} speaking={speaking} />
+            )}
+
+            {phase === "live" && (
+              <div
+                style={{
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: 13,
+                  color: "#4caf82",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                {formatTime(elapsed)}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
+
+        {/* ── CTA BUTTONS ── */}
+        <div
+          style={{
+            padding: "32px 20px 0",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          {phase === "idle" && (
+            <button
+              onClick={startVoice}
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: 16,
+                background: "#f0f0f0",
+                color: "#080808",
+                fontSize: 15,
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "'DM Mono', monospace",
+                letterSpacing: "0.04em",
+              }}
+            >
+              Start Session
+            </button>
+          )}
+
+          {phase === "live" && (
+            <button
+              onClick={endRoleplay}
+              className="btn-end"
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: 16,
+                background: "#1a0808",
+                color: "#f87171",
+                fontSize: 15,
+                fontWeight: 600,
+                border: "1px solid #f8717133",
+                cursor: "pointer",
+                fontFamily: "'DM Mono', monospace",
+                letterSpacing: "0.04em",
+              }}
+            >
+              ■ End &amp; Analyze
+            </button>
+          )}
+
+          {phase === "done" && (
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={() => setAnalysisOpen(true)}
+                style={{
+                  flex: 1,
+                  padding: "14px",
+                  borderRadius: 16,
+                  background: "#111",
+                  color: "#4f8ef7",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  border: "1px solid #4f8ef733",
+                  cursor: "pointer",
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              >
+                View Analysis
+              </button>
+              <button
+                onClick={() => {
+                  setPhase("idle");
+                  setTranscriptLines([]);
+                  setAnalysis(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: "14px",
+                  borderRadius: 16,
+                  background: "#f0f0f0",
+                  color: "#080808",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                  fontFamily: "'DM Mono', monospace",
+                }}
+              >
+                New Session
+              </button>
+            </div>
+          )}
+
+          {(phase === "connecting" || phase === "ending") && (
+            <button
+              disabled
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: 16,
+                background: "#111",
+                color: "#555",
+                fontSize: 15,
+                border: "1px solid #222",
+                cursor: "not-allowed",
+                fontFamily: "'DM Mono', monospace",
+              }}
+            >
+              {phase === "connecting" ? "Connecting..." : "Analyzing session..."}
+            </button>
+          )}
+        </div>
+
+        {/* ── LIVE TRANSCRIPT ── */}
+        {(phase === "live" || phase === "ending" || phase === "done") && transcriptLines.length > 0 && (
+          <div
+            style={{
+              margin: "24px 20px 0",
+              background: "#0d0d0d",
+              border: "1px solid #1e1e1e",
+              borderRadius: 18,
+              padding: "16px",
+              maxHeight: 220,
+              overflowY: "auto",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                color: "#444",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 12,
+              }}
+            >
+              Live Transcript
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {transcriptLines.map((line, i) => {
+                const isAgent = line.startsWith("Agent:");
+                return (
+                  <div key={i} className="transcript-line" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: isAgent ? "#4f8ef7" : "#4caf82",
+                        flexShrink: 0,
+                        paddingTop: 1,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {isAgent ? "You" : "Buyer"}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#aaa", lineHeight: 1.5 }}>
+                      {line.replace(/^(Agent:|Buyer:)\s*/, "")}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
-      </div>
-    );
-  }
 
+        {/* ── TIPS ── */}
+        {phase === "idle" && (
+          <div
+            style={{
+              margin: "24px 20px 0",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            {[
+              { icon: "🏠", tip: "Ask about budget and timeline early" },
+              { icon: "🤝", tip: "Build trust before pitching properties" },
+              { icon: "🔍", tip: "Uncover emotional motivators" },
+            ].map((t, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  background: "#0d0d0d",
+                  border: "1px solid #1a1a1a",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                }}
+              >
+                <span style={{ fontSize: 18 }}>{t.icon}</span>
+                <span style={{ fontSize: 12, color: "#666" }}>{t.tip}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Analysis bottom sheet */}
+      {analysisOpen && analysis && (
+        <AnalysisSheet analysis={analysis} onClose={() => setAnalysisOpen(false)} />
+      )}
+    </>
+  );
 }
