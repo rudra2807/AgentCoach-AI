@@ -462,6 +462,17 @@ export default function RoleplayPage() {
   const botTurnsRef = useRef(0);
   const beatIdxRef = useRef(0);
 
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (transcriptScrollRef.current) {
+      transcriptScrollRef.current.scrollTo({
+        top: transcriptScrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [transcriptLines]);
+
   /* timer */
   useEffect(() => {
     if (phase === "live") {
@@ -495,83 +506,83 @@ export default function RoleplayPage() {
   //     animFrameRef.current = requestAnimationFrame(tick);
   //   } catch { }
   // }
-      function requestNextBotLine(scenario: any) {
-      const dc = dcRef.current;
-      if (!dc || dc.readyState !== "open") return;
+  function requestNextBotLine(scenario: any) {
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== "open") return;
 
-      const who = scenario.role === "seller" ? "seller" : "buyer";
+    const who = scenario.role === "seller" ? "seller" : "buyer";
 
-      // pick the next scripted line
-      let nextLine: string | null = null;
+    // pick the next scripted line
+    let nextLine: string | null = null;
 
-      if (scenario.beats) {
-        if (botTurnsRef.current === 0) {
-          nextLine = scenario.beats.opener;
-        } else {
-          const i = beatIdxRef.current;
-          nextLine = scenario.beats.pushbacks?.[i] ?? scenario.beats.ender ?? null;
-          beatIdxRef.current += 1;
-        }
+    if (scenario.beats) {
+      if (botTurnsRef.current === 0) {
+        nextLine = scenario.beats.opener;
       } else {
-        // fallback to existing opener behavior (buyer scenarios)
-        if (botTurnsRef.current === 0) nextLine = buildOpeningInstructions(scenario);
+        const i = beatIdxRef.current;
+        nextLine = scenario.beats.pushbacks?.[i] ?? scenario.beats.ender ?? null;
+        beatIdxRef.current += 1;
       }
-
-      if (!nextLine) return;
-
-      // stop at 5 total bot lines (opener + 4 replies)
-      const MAX_BOT_TURNS = 5;
-      if (botTurnsRef.current >= MAX_BOT_TURNS) return;
-
-      dc.send(JSON.stringify({
-        type: "response.create",
-        response: {
-          instructions: `You are the ${who}. Speak ONLY this next line verbatim, in English, then stop:\n"${nextLine}"`,
-        },
-      }));
-
-      botTurnsRef.current += 1;
+    } else {
+      // fallback to existing opener behavior (buyer scenarios)
+      if (botTurnsRef.current === 0) nextLine = buildOpeningInstructions(scenario);
     }
 
-    function setupSpeakingDetection(stream: MediaStream) {
-      try {
-        const ctx = new AudioContext();
-        const src = ctx.createMediaStreamSource(stream);
-        const analyzer = ctx.createAnalyser();
-        analyzer.fftSize = 256;
-        src.connect(analyzer);
-        analyzerRef.current = analyzer;
+    if (!nextLine) return;
 
-        const buf = new Uint8Array(analyzer.frequencyBinCount);
-        function tick() {
-          analyzer.getByteFrequencyData(buf);
-          const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
-          setSpeaking(avg > 8);
-          animFrameRef.current = requestAnimationFrame(tick);
-        }
+    // stop at 5 total bot lines (opener + 4 replies)
+    const MAX_BOT_TURNS = 5;
+    if (botTurnsRef.current >= MAX_BOT_TURNS) return;
+
+    dc.send(JSON.stringify({
+      type: "response.create",
+      response: {
+        instructions: `You are the ${who}. Speak ONLY this next line verbatim, in English, then stop:\n"${nextLine}"`,
+      },
+    }));
+
+    botTurnsRef.current += 1;
+  }
+
+  function setupSpeakingDetection(stream: MediaStream) {
+    try {
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyzer = ctx.createAnalyser();
+      analyzer.fftSize = 256;
+      src.connect(analyzer);
+      analyzerRef.current = analyzer;
+
+      const buf = new Uint8Array(analyzer.frequencyBinCount);
+      function tick() {
+        analyzer.getByteFrequencyData(buf);
+        const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+        setSpeaking(avg > 8);
         animFrameRef.current = requestAnimationFrame(tick);
-      } catch {}
-    }
-    function stopLiveSessionNoAnalyze() {
-      // prevent double-run
-      if (autoStopRef.current) return;
-      autoStopRef.current = true;
-
-      // stop visualizer loop
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      setSpeaking(false);
-
-      // close webrtc + mic
-      const pc = pcRef.current;
-      if (pc) {
-        pc.getSenders().forEach((s) => s.track?.stop());
-        pc.close();
-        pcRef.current = null;
       }
+      animFrameRef.current = requestAnimationFrame(tick);
+    } catch { }
+  }
+  function stopLiveSessionNoAnalyze() {
+    // prevent double-run
+    if (autoStopRef.current) return;
+    autoStopRef.current = true;
 
-      // move to done state, but DO NOT call analyze
-      setPhase("done");
+    // stop visualizer loop
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    setSpeaking(false);
+
+    // close webrtc + mic
+    const pc = pcRef.current;
+    if (pc) {
+      pc.getSenders().forEach((s) => s.track?.stop());
+      pc.close();
+      pcRef.current = null;
     }
+
+    // move to done state, but DO NOT call analyze
+    setPhase("done");
+  }
 
   async function startVoice() {
     botTurnsRef.current = 0;
@@ -589,10 +600,10 @@ export default function RoleplayPage() {
       const scenario = getScenarioById(scenarioId);
       // const tokenRes = await fetch("/api/roleplay/realtime-token", { method: "POST" });
       const tokenRes = await fetch("/api/roleplay/realtime-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scenarioId: scenario.id }),
-        });
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenarioId: scenario.id }),
+      });
       const tokenData = await tokenRes.json();
       if (!tokenRes.ok) throw new Error(tokenData?.error ?? "Failed to create realtime session");
       if (!tokenData?.client_secret?.value) throw new Error("Missing client_secret in token response");
@@ -662,10 +673,10 @@ export default function RoleplayPage() {
           msg.type === "conversation.item.input_audio_transcription.completed" &&
           msg.transcript
         ) {
-            const t = msg.transcript.trim();
-            if (isJunkTranscript(t)) return;           // ✅ drop junk
-            if (t === lastYouRef.current) return;       // ✅ drop duplicates
-            lastYouRef.current = t;
+          const t = msg.transcript.trim();
+          if (isJunkTranscript(t)) return;           // ✅ drop junk
+          if (t === lastYouRef.current) return;       // ✅ drop duplicates
+          lastYouRef.current = t;
           const line = `Agent: ${msg.transcript.trim()}`;
           transcriptRef.current.push(line);
           setTranscriptLines((p) => [...p, line]);
@@ -1178,6 +1189,7 @@ export default function RoleplayPage() {
         {/* ── LIVE TRANSCRIPT ── */}
         {(phase === "live" || phase === "ending" || phase === "done") && transcriptLines.length > 0 && (
           <div
+            ref={transcriptScrollRef}
             style={{
               margin: "24px 20px 0",
               background: "#0d0d0d",
