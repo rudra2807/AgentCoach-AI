@@ -455,6 +455,13 @@ export default function RoleplayPage() {
 
   const started = phase !== "idle" && phase !== "done";
 
+  const MAX_BUYER_TURNS = 5; // 4 or 5
+  const buyerTurnsRef = useRef(0);
+  const autoStopRef = useRef(false);
+  const dcRef = useRef<RTCDataChannel | null>(null);
+  const botTurnsRef = useRef(0);
+  const beatIdxRef = useRef(0);
+
   /* timer */
   useEffect(() => {
     if (phase === "live") {
@@ -488,6 +495,44 @@ export default function RoleplayPage() {
   //     animFrameRef.current = requestAnimationFrame(tick);
   //   } catch { }
   // }
+      function requestNextBotLine(scenario: any) {
+      const dc = dcRef.current;
+      if (!dc || dc.readyState !== "open") return;
+
+      const who = scenario.role === "seller" ? "seller" : "buyer";
+
+      // pick the next scripted line
+      let nextLine: string | null = null;
+
+      if (scenario.beats) {
+        if (botTurnsRef.current === 0) {
+          nextLine = scenario.beats.opener;
+        } else {
+          const i = beatIdxRef.current;
+          nextLine = scenario.beats.pushbacks?.[i] ?? scenario.beats.ender ?? null;
+          beatIdxRef.current += 1;
+        }
+      } else {
+        // fallback to existing opener behavior (buyer scenarios)
+        if (botTurnsRef.current === 0) nextLine = buildOpeningInstructions(scenario);
+      }
+
+      if (!nextLine) return;
+
+      // stop at 5 total bot lines (opener + 4 replies)
+      const MAX_BOT_TURNS = 5;
+      if (botTurnsRef.current >= MAX_BOT_TURNS) return;
+
+      dc.send(JSON.stringify({
+        type: "response.create",
+        response: {
+          instructions: `You are the ${who}. Speak ONLY this next line verbatim, in English, then stop:\n"${nextLine}"`,
+        },
+      }));
+
+      botTurnsRef.current += 1;
+    }
+
     function setupSpeakingDetection(stream: MediaStream) {
       try {
         const ctx = new AudioContext();
@@ -507,8 +552,33 @@ export default function RoleplayPage() {
         animFrameRef.current = requestAnimationFrame(tick);
       } catch {}
     }
+    function stopLiveSessionNoAnalyze() {
+      // prevent double-run
+      if (autoStopRef.current) return;
+      autoStopRef.current = true;
+
+      // stop visualizer loop
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      setSpeaking(false);
+
+      // close webrtc + mic
+      const pc = pcRef.current;
+      if (pc) {
+        pc.getSenders().forEach((s) => s.track?.stop());
+        pc.close();
+        pcRef.current = null;
+      }
+
+      // move to done state, but DO NOT call analyze
+      setPhase("done");
+    }
 
   async function startVoice() {
+    botTurnsRef.current = 0;
+    beatIdxRef.current = 0;
+    dcRef.current = null;
+    buyerTurnsRef.current = 0;
+    autoStopRef.current = false;
     setPhase("connecting");
     setTranscriptLines([]);
     transcriptRef.current = [];
@@ -524,6 +594,8 @@ export default function RoleplayPage() {
           body: JSON.stringify({ scenarioId: scenario.id }),
         });
       const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error(tokenData?.error ?? "Failed to create realtime session");
+      if (!tokenData?.client_secret?.value) throw new Error("Missing client_secret in token response");
 
       setSessionId(crypto.randomUUID());
 
@@ -564,35 +636,21 @@ export default function RoleplayPage() {
         //     },
         //   },
         // }));
+        dcRef.current = dc;
+
         dc.send(JSON.stringify({
           type: "session.update",
           session: {
             turn_detection: {
               type: "server_vad",
-              threshold: 0.85,
-              // prefix_padding_ms: 200,
-              // silence_duration_ms: 700
+              threshold: 0.7,
+              silence_duration_ms: 1500,
+              prefix_padding_ms: 250,
             },
-            input_audio_transcription: {
-              model: "whisper-1",
-              language: "en"
-            }
-          }
-        }));
-        const opening = buildOpeningInstructions(scenario);
-        // 2. Kick off the buyer's opening line
-        // dc.send(JSON.stringify({
-        //   type: "response.create",
-        //   response: {
-        //     instructions: "Start the conversation as a cautious home buyer browsing homes but unsure about timing.",
-        //   },
-        // }));
-        dc.send(JSON.stringify({
-          type: "response.create",
-          response: {
-            instructions: opening,
+            input_audio_transcription: { model: "whisper-1", language: "en" },
           },
         }));
+        requestNextBotLine(scenario);
       };
 
       dc.onmessage = (event) => {
@@ -611,13 +669,18 @@ export default function RoleplayPage() {
           const line = `Agent: ${msg.transcript.trim()}`;
           transcriptRef.current.push(line);
           setTranscriptLines((p) => [...p, line]);
+          requestNextBotLine(scenario);
         }
 
         // AI buyer voice — delta builds up the text, .done has the full turn
         if (msg.type === "response.audio_transcript.done" && msg.transcript) {
-          const line = `Buyer: ${msg.transcript.trim()}`;
+          // const line = `Buyer: ${msg.transcript.trim()}`;
+          const scenarioRoleLabel = scenario.role === "seller" ? "Seller" : "Buyer";
+          const line = `${scenarioRoleLabel}: ${msg.transcript.trim()}`;
           transcriptRef.current.push(line);
           setTranscriptLines((p) => [...p, line]);
+
+          if (botTurnsRef.current >= 5) stopLiveSessionNoAnalyze();
         }
       };
 
@@ -1051,7 +1114,7 @@ export default function RoleplayPage() {
           {phase === "done" && (
             <div style={{ display: "flex", gap: 12 }}>
               <button
-                onClick={() => setAnalysisOpen(true)}
+                onClick={endRoleplay}
                 style={{
                   flex: 1,
                   padding: "14px",
@@ -1065,12 +1128,13 @@ export default function RoleplayPage() {
                   fontFamily: "'DM Mono', monospace",
                 }}
               >
-                View Analysis
+                Start Analyze
               </button>
               <button
                 onClick={() => {
                   setPhase("idle");
                   setTranscriptLines([]);
+                  transcriptRef.current = [];
                   setAnalysis(null);
                 }}
                 style={{
@@ -1137,24 +1201,27 @@ export default function RoleplayPage() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {transcriptLines.map((line, i) => {
-                const isAgent = line.startsWith("Agent:");
+                const isYou = line.startsWith("Agent:");
+                const isSeller = line.startsWith("Seller:");
+                const label = isYou ? "You" : isSeller ? "Seller" : "Buyer";
                 return (
                   <div key={i} className="transcript-line" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                     <span
                       style={{
                         fontSize: 10,
                         fontWeight: 600,
-                        color: isAgent ? "#4f8ef7" : "#4caf82",
+                        // color: isAgent ? "#4f8ef7" : "#4caf82",
+                        color: isYou ? "#4f8ef7" : "#4caf82",
                         flexShrink: 0,
                         paddingTop: 1,
                         letterSpacing: "0.06em",
                         textTransform: "uppercase",
                       }}
                     >
-                      {isAgent ? "You" : "Buyer"}
+                      {label}
                     </span>
                     <span style={{ fontSize: 12, color: "#aaa", lineHeight: 1.5 }}>
-                      {line.replace(/^(Agent:|Buyer:)\s*/, "")}
+                      {line.replace(/^(Agent:|Buyer:|Seller:)\s*/, "")}
                     </span>
                   </div>
                 );

@@ -130,11 +130,11 @@ function InsightCard({
 ───────────────────────────────────────────── */
 function SwipeCards({ analysis }: { analysis: any }) {
   const cards = [
-    { title: "◎ Summary", content: analysis.conversation_summary?.text, accent: "#4f8ef7", bg: "#0a0e1a", isList: false },
-    { title: "✦ What Worked", content: analysis.what_worked?.map((i: any) => i.point), accent: "#4caf82", bg: "#0a1a10", isList: true },
-    { title: "✧ What Hurt Conversion", content: analysis.what_hurt_conversion?.map((i: any) => i.point), accent: "#f87171", bg: "#1a0a0a", isList: true },
-    { title: "◈ Missed Opportunity", content: analysis.missed_opportunity?.description, accent: "#f59e0b", bg: "#1a1400", isList: false },
-    { title: "↗ What To Say Instead", content: analysis.what_to_say_instead?.rewritten_follow_up, accent: "#a78bfa", bg: "#110a1a", isList: false },
+    { title: "◎ Summary", content: analysis.conversation_summary?.text ?? "—", accent: "#4f8ef7", bg: "#0a0e1a", isList: false },
+    { title: "✦ What Worked", content: (analysis.what_worked ?? []).map((i: any) => i.point), accent: "#4caf82", bg: "#0a1a10", isList: true },
+    { title: "✧ What Hurt Conversion", content: (analysis.what_hurt_conversion ?? []).map((i: any) => i.point), accent: "#f87171", bg: "#1a0a0a", isList: true },
+    { title: "◈ Missed Opportunity", content: analysis.missed_opportunity?.description ?? "—", accent: "#f59e0b", bg: "#1a1400", isList: false },
+    { title: "↗ What To Say Instead", content: analysis.what_to_say_instead?.rewritten_follow_up ?? "—", accent: "#a78bfa", bg: "#110a1a", isList: false },
   ];
 
   return (
@@ -309,7 +309,8 @@ export default function Page() {
   const [conversationType, setConversationType] = useState<ConversationType>("Open House");
   const [result, setResult] = useState<any>(null);
 
-  const canAnalyze = Boolean(file) && phase === "idle";
+  // const canAnalyze = Boolean(file) && phase === "idle";
+  const canAnalyze = Boolean(file) && Boolean(userID) && phase === "idle";
 
   useEffect(() => {
     signInAnonymously(auth)
