@@ -1,0 +1,927 @@
+{
+  "script_id": "customer_roleplay_flow_v1",
+  "version": 1,
+  "roles": { "bot": "Customer", "user": "Agent" },
+  "notes": {
+    "purpose": "Customer-roleplay utterance library grouped by stage. Use stage policy + triggers to select utterances at runtime.",
+    "timezone": "America/Los_Angeles"
+  },
+  "stages": [
+    {
+      "stage_id": 2,
+      "name": "Motivation Discovery",
+      "policy": {
+        "min_utterances": 4,
+        "max_utterances": 7,
+        "required_tags": ["motivation", "timeline_or_urgency"],
+        "next_stage": 3
+      }
+    },
+    {
+      "stage_id": 3,
+      "name": "Qualification & Depth",
+      "policy": {
+        "min_utterances": 5,
+        "max_utterances": 8,
+        "required_tags": ["budget_or_affordability", "bedrooms_or_size", "constraints"],
+        "next_stage": 4
+      }
+    },
+    {
+      "stage_id": 4,
+      "name": "Objection Handling",
+      "policy": {
+        "min_utterances": 3,
+        "max_utterances": 6,
+        "required_tags": ["objection"],
+        "next_stage": 5
+      }
+    },
+    {
+      "stage_id": 5,
+      "name": "Value Frame Testing",
+      "policy": {
+        "min_utterances": 1,
+        "max_utterances": 3,
+        "required_tags": ["value_test"],
+        "next_stage": 6
+      }
+    },
+    {
+      "stage_id": 6,
+      "name": "Momentum & Next Stage",
+      "policy": {
+        "min_utterances": 2,
+        "max_utterances": 4,
+        "required_tags": ["next_step_resistance"],
+        "next_stage": null
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "from_stage": 2,
+      "trigger": "agent_pushes_listings_early",
+      "to_stage": 4,
+      "note": "Escalate resistance if agent goes to listings/showings before discovery."
+    },
+    {
+      "from_stage": 3,
+      "trigger": "agent_pushes_offer_or_pressure",
+      "to_stage": 4,
+      "note": "If agent introduces pressure or offer talk prematurely, go to objections."
+    }
+  ],
+  "classifiers": {
+    "agent_acknowledged": {
+      "type": "rules_or_llm",
+      "description": "Agent validates/acknowledges the customer's stance and asks a discovery question without pressure."
+    },
+    "agent_pushes_listings_early": {
+      "type": "rules_or_llm",
+      "description": "Agent pushes listings/showings/appointments or uses urgency without discovery."
+    },
+    "agent_pushes_offer_or_pressure": {
+      "type": "rules_or_llm",
+      "description": "Agent pushes commitment/offer/representation agreement too early or uses fear/urgency framing."
+    }
+  },
+  "variant_groups": [
+    {
+      "group_id": "housing_status",
+      "note": "Pick one per session unless you intentionally want mixed signals.",
+      "members": ["renting_now", "selling_current_home"]
+    },
+    {
+      "group_id": "financing_status",
+      "note": "Pick one per session unless testing contradictions.",
+      "members": ["preapproved", "no_lender_yet", "not_preapproved_yet"]
+    },
+    {
+      "group_id": "directional_need",
+      "note": "Upsize vs downsize — usually choose one.",
+      "members": ["upsizing", "downsizing"]
+    }
+  ],
+  "utterances": [
+    {
+      "id": "s2_01_starting_to_look",
+      "stage_id": 2,
+      "text": "We’re just starting to look.",
+      "tags": ["motivation", "low_urgency", "timeline_or_urgency"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_02_not_in_a_rush",
+      "stage_id": 2,
+      "text": "We’re not really in a rush.",
+      "tags": ["motivation", "low_urgency", "timeline_or_urgency"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_03_browsing_zillow",
+      "stage_id": 2,
+      "text": "We’ve been browsing Zillow for a while.",
+      "tags": ["motivation", "researching_online"],
+      "facts": { "source": "zillow" },
+      "once": true
+    },
+    {
+      "id": "s2_04_renting_now",
+      "stage_id": 2,
+      "text": "We’re renting right now.",
+      "tags": ["motivation", "housing_status"],
+      "facts": { "current_housing": "renting" },
+      "variant_group": "housing_status",
+      "variant_key": "renting_now",
+      "once": true
+    },
+    {
+      "id": "s2_05_lease_ends_6_months",
+      "stage_id": 2,
+      "text": "Our lease ends in six months.",
+      "tags": ["timeline_or_urgency", "housing_status"],
+      "facts": { "lease_months_remaining": 6 },
+      "requires": ["s2_04_renting_now"],
+      "once": true
+    },
+    {
+      "id": "s2_06_more_space",
+      "stage_id": 2,
+      "text": "We might want more space.",
+      "tags": ["motivation", "space_need"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_07_had_a_baby",
+      "stage_id": 2,
+      "text": "We just had a baby.",
+      "tags": ["motivation", "life_event", "family_need"],
+      "facts": { "life_event": "new_baby" },
+      "once": true
+    },
+    {
+      "id": "s2_08_relocating_work",
+      "stage_id": 2,
+      "text": "We’re relocating for work.",
+      "tags": ["motivation", "life_event", "relocation"],
+      "facts": { "relocation": true, "reason": "work" },
+      "once": true
+    },
+    {
+      "id": "s2_09_neighborhood_uncertain",
+      "stage_id": 2,
+      "text": "We don’t know if this is the right neighborhood.",
+      "tags": ["motivation", "location_uncertainty"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_10_just_curious",
+      "stage_id": 2,
+      "text": "We’re mostly just curious.",
+      "tags": ["motivation", "low_commitment", "timeline_or_urgency"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_11_upsizing",
+      "stage_id": 2,
+      "text": "We’re thinking about upsizing.",
+      "tags": ["motivation", "space_need", "directional_need"],
+      "facts": { "direction": "upsize" },
+      "variant_group": "directional_need",
+      "variant_key": "upsizing",
+      "once": true
+    },
+    {
+      "id": "s2_12_downsize",
+      "stage_id": 2,
+      "text": "We might downsize soon.",
+      "tags": ["motivation", "space_need", "directional_need"],
+      "facts": { "direction": "downsize" },
+      "variant_group": "directional_need",
+      "variant_key": "downsizing",
+      "once": true
+    },
+    {
+      "id": "s2_13_not_sure_afford",
+      "stage_id": 2,
+      "text": "We don’t know what we can afford yet.",
+      "tags": ["motivation", "budget_or_affordability", "uncertainty"],
+      "facts": { "affordability_known": false },
+      "once": true
+    },
+    {
+      "id": "s2_14_worried_market",
+      "stage_id": 2,
+      "text": "We’re worried about the market.",
+      "tags": ["motivation", "market_concern", "objection_seed"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_15_dont_overpay",
+      "stage_id": 2,
+      "text": "We don’t want to overpay.",
+      "tags": ["motivation", "price_sensitivity", "objection_seed"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s2_16_lost_out_before",
+      "stage_id": 2,
+      "text": "We lost out on another home.",
+      "tags": ["motivation", "prior_loss", "competition_concern"],
+      "facts": { "lost_out_before": true },
+      "once": true
+    },
+    {
+      "id": "s2_17_condos_and_houses",
+      "stage_id": 2,
+      "text": "We’re exploring both condos and houses.",
+      "tags": ["motivation", "property_type"],
+      "facts": { "property_types": ["condo", "house"] },
+      "once": true
+    },
+    {
+      "id": "s2_18_want_yard",
+      "stage_id": 2,
+      "text": "We want a yard.",
+      "tags": ["motivation", "must_have", "constraints"],
+      "facts": { "must_have": ["yard"] },
+      "once": true
+    },
+    {
+      "id": "s2_19_no_fixer",
+      "stage_id": 2,
+      "text": "We don’t want a fixer.",
+      "tags": ["motivation", "condition_preference", "constraints"],
+      "facts": { "avoid": ["fixer"] },
+      "once": true
+    },
+    {
+      "id": "s2_20_seeing_whats_out_there",
+      "stage_id": 2,
+      "text": "We’re just seeing what’s out there before making any decisions.",
+      "tags": ["motivation", "low_commitment", "timeline_or_urgency"],
+      "facts": {},
+      "once": true
+    },
+
+    {
+      "id": "s3_01_budget_900k",
+      "stage_id": 3,
+      "text": "We’re thinking around $900K.",
+      "tags": ["budget_or_affordability", "qualification"],
+      "facts": { "budget": 900000, "currency": "USD" },
+      "once": true
+    },
+    {
+      "id": "s3_02_probably_3_bed",
+      "stage_id": 3,
+      "text": "Probably 3 bedrooms.",
+      "tags": ["bedrooms_or_size", "qualification"],
+      "facts": { "bedrooms": 3 },
+      "once": true
+    },
+    {
+      "id": "s3_03_move_in_ready",
+      "stage_id": 3,
+      "text": "We want something move-in ready.",
+      "tags": ["constraints", "condition_preference", "qualification"],
+      "facts": { "condition": "move_in_ready" },
+      "once": true
+    },
+    {
+      "id": "s3_04_both_commute",
+      "stage_id": 3,
+      "text": "We both commute.",
+      "tags": ["constraints", "location", "commute"],
+      "facts": { "commute": true, "commuters": 2 },
+      "once": true
+    },
+    {
+      "id": "s3_05_good_schools",
+      "stage_id": 3,
+      "text": "We need good schools.",
+      "tags": ["constraints", "schools", "family_need"],
+      "facts": { "need_good_schools": true },
+      "once": true
+    },
+    {
+      "id": "s3_06_preapproved",
+      "stage_id": 3,
+      "text": "We’re pre-approved.",
+      "tags": ["financing", "qualification"],
+      "facts": { "preapproved": true },
+      "variant_group": "financing_status",
+      "variant_key": "preapproved",
+      "once": true
+    },
+    {
+      "id": "s3_07_no_lender_yet",
+      "stage_id": 3,
+      "text": "We haven’t talked to a lender yet.",
+      "tags": ["financing", "uncertainty"],
+      "facts": { "spoken_to_lender": false },
+      "variant_group": "financing_status",
+      "variant_key": "no_lender_yet",
+      "once": true
+    },
+    {
+      "id": "s3_08_at_least_2000_sqft",
+      "stage_id": 3,
+      "text": "We want at least 2,000 square feet.",
+      "tags": ["bedrooms_or_size", "constraints", "qualification"],
+      "facts": { "min_sqft": 2000 },
+      "once": true
+    },
+    {
+      "id": "s3_09_quiet_street",
+      "stage_id": 3,
+      "text": "We’d prefer a quiet street.",
+      "tags": ["constraints", "lifestyle_preference"],
+      "facts": { "preference": ["quiet_street"] },
+      "once": true
+    },
+    {
+      "id": "s3_10_no_hoa",
+      "stage_id": 3,
+      "text": "We don’t want HOA.",
+      "tags": ["constraints", "hoa_preference"],
+      "facts": { "avoid": ["hoa"] },
+      "once": true
+    },
+    {
+      "id": "s3_11_flexible_timeline",
+      "stage_id": 3,
+      "text": "We’re flexible on timeline.",
+      "tags": ["timeline_or_urgency", "qualification"],
+      "facts": { "timeline_flexible": true },
+      "once": true
+    },
+    {
+      "id": "s3_12_selling_current_home",
+      "stage_id": 3,
+      "text": "We’re selling our current home.",
+      "tags": ["housing_status", "qualification"],
+      "facts": { "current_housing": "owning", "selling_current_home": true },
+      "variant_group": "housing_status",
+      "variant_key": "selling_current_home",
+      "once": true
+    },
+    {
+      "id": "s3_13_just_upgrading",
+      "stage_id": 3,
+      "text": "We’re just upgrading.",
+      "tags": ["motivation", "directional_need"],
+      "facts": { "direction": "upgrade" },
+      "once": true
+    },
+    {
+      "id": "s3_14_dont_stretch",
+      "stage_id": 3,
+      "text": "We don’t want to stretch financially.",
+      "tags": ["budget_or_affordability", "price_sensitivity", "constraints"],
+      "facts": { "avoid_stretch": true },
+      "once": true
+    },
+    {
+      "id": "s3_15_good_resale",
+      "stage_id": 3,
+      "text": "We want good resale value.",
+      "tags": ["constraints", "resale_value"],
+      "facts": { "resale_value_priority": true },
+      "once": true
+    },
+    {
+      "id": "s3_16_need_parking",
+      "stage_id": 3,
+      "text": "We need parking.",
+      "tags": ["constraints", "must_have"],
+      "facts": { "must_have": ["parking"] },
+      "once": true
+    },
+    {
+      "id": "s3_17_multiple_neighborhoods",
+      "stage_id": 3,
+      "text": "We’re looking in multiple neighborhoods.",
+      "tags": ["constraints", "location", "uncertainty"],
+      "facts": { "multiple_neighborhoods": true },
+      "once": true
+    },
+    {
+      "id": "s3_18_new_construction_vs_resale",
+      "stage_id": 3,
+      "text": "We’re not sure if we want new construction or resale.",
+      "tags": ["constraints", "property_condition", "uncertainty"],
+      "facts": { "considering": ["new_construction", "resale"] },
+      "once": true
+    },
+    {
+      "id": "s3_19_turnkey",
+      "stage_id": 3,
+      "text": "We want something turnkey.",
+      "tags": ["constraints", "condition_preference"],
+      "facts": { "condition": "turnkey" },
+      "once": true
+    },
+    {
+      "id": "s3_20_no_10_offers",
+      "stage_id": 3,
+      "text": "We don’t want to compete with 10 offers.",
+      "tags": ["constraints", "competition_concern", "objection_seed"],
+      "facts": { "avoid_competition": true },
+      "once": true
+    },
+
+    {
+      "id": "s4_01_just_browsing",
+      "stage_id": 4,
+      "text": "We’re just browsing.",
+      "tags": ["objection", "low_commitment"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_02_not_in_rush",
+      "stage_id": 4,
+      "text": "We’re not in a rush.",
+      "tags": ["objection", "timeline_or_urgency"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_03_dont_feel_pressured",
+      "stage_id": 4,
+      "text": "We don’t want to feel pressured.",
+      "tags": ["objection", "pressure_resistance"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_04_price_high",
+      "stage_id": 4,
+      "text": "The price seems high.",
+      "tags": ["objection", "price_sensitivity"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_05_dont_overpay",
+      "stage_id": 4,
+      "text": "We don’t want to overpay.",
+      "tags": ["objection", "price_sensitivity"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_06_market_crash",
+      "stage_id": 4,
+      "text": "We’ve heard the market might crash.",
+      "tags": ["objection", "market_concern"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_07_worried_rates",
+      "stage_id": 4,
+      "text": "We’re worried about interest rates.",
+      "tags": ["objection", "rates_concern"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_08_wait_year",
+      "stage_id": 4,
+      "text": "We’re thinking of waiting a year.",
+      "tags": ["objection", "timeline_or_urgency", "delay"],
+      "facts": { "delay_months": 12 },
+      "once": true
+    },
+    {
+      "id": "s4_09_not_sure_agent",
+      "stage_id": 4,
+      "text": "We don’t know if we want to commit to working with an agent.",
+      "tags": ["objection", "agent_commitment"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_10_lost_out_dont_want_again",
+      "stage_id": 4,
+      "text": "We lost out before and don’t want that again.",
+      "tags": ["objection", "prior_loss", "competition_concern"],
+      "facts": { "lost_out_before": true },
+      "once": true
+    },
+    {
+      "id": "s4_11_too_small",
+      "stage_id": 4,
+      "text": "This feels too small.",
+      "tags": ["objection", "size_concern"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_12_overpriced",
+      "stage_id": 4,
+      "text": "This feels overpriced.",
+      "tags": ["objection", "price_sensitivity"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_13_dont_like_hoas",
+      "stage_id": 4,
+      "text": "We don’t like HOAs.",
+      "tags": ["objection", "hoa_preference"],
+      "facts": { "avoid": ["hoa"] },
+      "once": true
+    },
+    {
+      "id": "s4_14_worried_resale",
+      "stage_id": 4,
+      "text": "We’re worried about resale value.",
+      "tags": ["objection", "resale_value"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_15_dont_waive_contingencies",
+      "stage_id": 4,
+      "text": "We don’t want to waive contingencies.",
+      "tags": ["objection", "risk_concern", "contract_terms"],
+      "facts": { "avoid": ["waive_contingencies"] },
+      "once": true
+    },
+    {
+      "id": "s4_16_not_preapproved_yet",
+      "stage_id": 4,
+      "text": "We’re not pre-approved yet.",
+      "tags": ["objection", "financing"],
+      "facts": { "preapproved": false },
+      "variant_group": "financing_status",
+      "variant_key": "not_preapproved_yet",
+      "once": true
+    },
+    {
+      "id": "s4_17_dont_like_layout",
+      "stage_id": 4,
+      "text": "We don’t like the layout.",
+      "tags": ["objection", "layout_concern"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_18_keep_looking",
+      "stage_id": 4,
+      "text": "We think we should keep looking.",
+      "tags": ["objection", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_19_think_about_it",
+      "stage_id": 4,
+      "text": "We want to think about it.",
+      "tags": ["objection", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s4_20_not_sure",
+      "stage_id": 4,
+      "text": "We’re just not sure.",
+      "tags": ["objection", "uncertainty"],
+      "facts": {},
+      "once": true
+    },
+
+    {
+      "id": "s5_01_save_money_listing_agent",
+      "stage_id": 5,
+      "text": "Can’t we just go directly to the listing agent and save money?",
+      "tags": ["value_test", "commission", "representation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_02_browse_zillow_instead",
+      "stage_id": 5,
+      "text": "Why should we work with you instead of just browsing Zillow ourselves?",
+      "tags": ["value_test", "differentiation", "researching_online"],
+      "facts": { "source": "zillow" },
+      "once": true
+    },
+    {
+      "id": "s5_03_what_do_you_do",
+      "stage_id": 5,
+      "text": "What exactly do you do that I can’t do on my own?",
+      "tags": ["value_test", "differentiation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_04_all_agents_same",
+      "stage_id": 5,
+      "text": "Aren’t all agents basically the same?",
+      "tags": ["value_test", "differentiation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_05_seller_pays_commission",
+      "stage_id": 5,
+      "text": "If the seller pays your commission, why does it matter who we use?",
+      "tags": ["value_test", "commission", "representation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_06_wait_until_ready_offer",
+      "stage_id": 5,
+      "text": "Why shouldn’t we just wait until we’re ready to make an offer?",
+      "tags": ["value_test", "timing"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_07_advantage_competitive",
+      "stage_id": 5,
+      "text": "What advantage do you actually give us in a competitive situation?",
+      "tags": ["value_test", "competition_concern", "differentiation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_08_find_house_what_role",
+      "stage_id": 5,
+      "text": "If we find the house ourselves, what role do you really play?",
+      "tags": ["value_test", "differentiation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_09_lawyer_write_offer",
+      "stage_id": 5,
+      "text": "Can’t we just have a lawyer write up an offer?",
+      "tags": ["value_test", "representation", "process"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_10_buyer_rep_agreement",
+      "stage_id": 5,
+      "text": "Why would we sign a buyer representation agreement?",
+      "tags": ["value_test", "representation", "commitment"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_11_if_we_dont_like_working",
+      "stage_id": 5,
+      "text": "What happens if we don’t like working with you?",
+      "tags": ["value_test", "trust", "commitment"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_12_how_paid_why_worth",
+      "stage_id": 5,
+      "text": "How do you get paid, and why is that worth it?",
+      "tags": ["value_test", "commission", "value"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_13_market_slows_need_you",
+      "stage_id": 5,
+      "text": "If the market slows down, what do we need you for?",
+      "tags": ["value_test", "differentiation", "market_concern"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_14_beyond_unlocking_doors",
+      "stage_id": 5,
+      "text": "How do you help beyond unlocking doors?",
+      "tags": ["value_test", "differentiation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_15_do_differently",
+      "stage_id": 5,
+      "text": "What do you do differently from other agents?",
+      "tags": ["value_test", "differentiation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_16_handle_overpriced_home",
+      "stage_id": 5,
+      "text": "If the home is overpriced, how would you handle that?",
+      "tags": ["value_test", "price_sensitivity", "strategy"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_17_protect_from_overpaying",
+      "stage_id": 5,
+      "text": "How do you protect us from overpaying?",
+      "tags": ["value_test", "price_sensitivity", "strategy"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_18_mistakes_without_agent",
+      "stage_id": 5,
+      "text": "What mistakes do buyers make without an agent?",
+      "tags": ["value_test", "risk_concern", "education"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_19_start_to_finish_process",
+      "stage_id": 5,
+      "text": "What does working with you look like from start to finish?",
+      "tags": ["value_test", "process", "trust"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s5_20_why_trust_big_decision",
+      "stage_id": 5,
+      "text": "Why should we trust you with such a big decision?",
+      "tags": ["value_test", "trust"],
+      "facts": {},
+      "once": true
+    },
+
+    {
+      "id": "s6_01_next_step",
+      "stage_id": 6,
+      "text": "So what would the next step be?",
+      "tags": ["next_step_resistance", "cta_prompt"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_02_think_about_it",
+      "stage_id": 6,
+      "text": "We’ll think about it.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_03_not_ready_offer",
+      "stage_id": 6,
+      "text": "We’re not ready to make an offer.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_04_might_come_back",
+      "stage_id": 6,
+      "text": "We might come back.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_05_look_more_homes",
+      "stage_id": 6,
+      "text": "We’re going to look at a few more homes.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_06_deciding_budget",
+      "stage_id": 6,
+      "text": "We’re still deciding on budget.",
+      "tags": ["next_step_resistance", "budget_or_affordability", "uncertainty"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_07_talk_over_tonight",
+      "stage_id": 6,
+      "text": "We’ll talk it over tonight.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": { "delay": "tonight" },
+      "once": true
+    },
+    {
+      "id": "s6_08_gathering_info",
+      "stage_id": 6,
+      "text": "We’re just gathering info.",
+      "tags": ["next_step_resistance", "low_commitment"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_09_not_sure_one",
+      "stage_id": 6,
+      "text": "We’re not sure if this is the one.",
+      "tags": ["next_step_resistance", "uncertainty"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_10_check_family",
+      "stage_id": 6,
+      "text": "We need to check with family.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_11_dont_rush",
+      "stage_id": 6,
+      "text": "We don’t want to rush.",
+      "tags": ["next_step_resistance", "timeline_or_urgency", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_12_competing_offers_concern",
+      "stage_id": 6,
+      "text": "We’re concerned about competing offers.",
+      "tags": ["next_step_resistance", "competition_concern"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_13_reach_out_if_interested",
+      "stage_id": 6,
+      "text": "We’ll reach out if we’re interested.",
+      "tags": ["next_step_resistance", "brush_off"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_14_early_process",
+      "stage_id": 6,
+      "text": "We’re still early in the process.",
+      "tags": ["next_step_resistance", "low_commitment"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_15_dont_commit_anything",
+      "stage_id": 6,
+      "text": "We don’t want to commit to anything yet.",
+      "tags": ["next_step_resistance", "commitment_resistance"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_16_wait_see_rates",
+      "stage_id": 6,
+      "text": "We’re waiting to see what rates do.",
+      "tags": ["next_step_resistance", "rates_concern", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_17_another_open_house",
+      "stage_id": 6,
+      "text": "We’re going to another open house.",
+      "tags": ["next_step_resistance", "delay"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_18_dont_sign_anything",
+      "stage_id": 6,
+      "text": "We don’t want to sign anything.",
+      "tags": ["next_step_resistance", "commitment_resistance", "representation"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_19_deciding_neighborhoods",
+      "stage_id": 6,
+      "text": "We’re still deciding on neighborhoods.",
+      "tags": ["next_step_resistance", "location_uncertainty"],
+      "facts": {},
+      "once": true
+    },
+    {
+      "id": "s6_20_thanks_let_you_know",
+      "stage_id": 6,
+      "text": "Thanks, we’ll let you know.",
+      "tags": ["next_step_resistance", "brush_off"],
+      "facts": {},
+      "once": true
+    }
+  ]
+}
