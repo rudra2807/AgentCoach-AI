@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "AgentCoach AI",
-  description: "AI Coaching for Real Estate Conversations",
+  title: "MockMate — AI Interview Practice",
+  description: "Practice. Get coached. Get hired.",
 };
 
 export default function RootLayout({
